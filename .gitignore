@@ -3,3 +3,4 @@
 *.exe
 **/__pycache__
 .idea/
+MyBot_last.py
