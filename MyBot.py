@@ -10,32 +10,6 @@ import logging
 from collections import defaultdict
 import math
 
-"""
-1. When to return? - when its more valuable to turn in halite than to keep collecting (take into account halite from new turtles created by turn in)
-2. What path to take?
-3. how to avoid self
-4. how to avoid enemies
-5. When to create ships? - when return of ships is higher than their cost
-6. when to attack enemies?
-
-
-# excavators
-#
-
-Path planning:
-    - http://www.aaai.org/Papers/AIIDE/2005/AIIDE05-020.pdf
-    - http://www.aaai.org/ocs/index.php/AAAI/AAAI10/paper/viewFile/1926/1950
-*   - https://www.aaai.org/ocs/index.php/IJCAI/IJCAI11/paper/viewFile/3135/3585
-    - https://arxiv.org/ftp/arxiv/papers/1401/1401.3905.pdf
-
-    - https://www.aaai.org/ocs/index.php/IJCAI/IJCAI11/paper/viewFile/3132/3376
-
-    - http://users.isr.ist.utl.pt/~ahaeusler/material/papers/Cooperative_Path_Planning_for_Multiple_UAVs_in_Dynamic_and_Uncertain_Environments.pdf
-    - http://airspot.ru/book/file/1151/Brian_White_-_Cooperative_Path_Planning_of_Unmanned_Aerial_Vehicles_-_2011.pdf
-    - http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.4.8605&rep=rep1&type=pdf
-"""
-
-commander = None
 width = None
 height = None
 cardinal_directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
@@ -79,14 +53,7 @@ def get_halite_by_position(gmap):
     return halite_by_position
 
 
-def clear_log():
-    # open('bot-{}.log'.format(commander.game.my_id), 'w').close()
-    pass
-
-
 def log(s):
-    # with open('bot-{}.log'.format(commander.game.my_id), 'a') as fp:
-    #     fp.write('[{}] {}\n'.format(datetime.now(), s))
     # logging.info('[{}] {}'.format(datetime.now(), s))
     pass
 
@@ -108,6 +75,8 @@ class IncomeEstimation:
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
             amount_can_gain = constants.MAX_HALITE - ship.halite_amount
+
+            # TODO this multiplier makes halite have greater weight than time, maybe experiment?
             raw_amount_extracted = constants.EXTRACT_RATIO * gmap[destination].halite_amount
             amount_gained = min(amount_can_gain, raw_amount_extracted)
             turns_to_collect = 1
@@ -132,10 +101,6 @@ class IncomeEstimation:
         expected_halite_1 = (my_ships + 1) * halite_remaining / (total_ships + 1)
         halite_gained = expected_halite_1 - expected_halite
         return halite_gained - constants.SHIP_COST
-
-    @staticmethod
-    def max_hpt(me, gmap, ship, available_positions):
-        return max(map(lambda p: IncomeEstimation.hpt_of(me, gmap, ship, p), available_positions))
 
 
 class ResourceAllocation:
@@ -344,7 +309,6 @@ class Commander:
     def run_once(self):
         self.game.update_frame()
         start_time = datetime.now()
-        clear_log()
         log('Starting turn {}'.format(self.game.turn_number))
         queue = self.produce_commands(self.game.me, self.game.game_map)
         self.game.end_turn(queue)
@@ -380,7 +344,7 @@ class Commander:
 
 
 def main():
-    global commander, width, height
+    global width, height
     commander = Commander()
     width = commander.game.game_map.width
     height = commander.game.game_map.height
