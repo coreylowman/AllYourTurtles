@@ -10,8 +10,8 @@ import logging
 from collections import defaultdict
 import math
 
-width = None
-height = None
+width = 0
+height = 0
 cardinal_directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
 
 
@@ -31,7 +31,7 @@ def cardinal_neighbors(p):
     return [normalize(p[0] + d[0], p[1] + d[1]) for d in cardinal_directions]
 
 
-def iterate_by_radius(gmap, x, y):
+def iterate_by_radius(x, y):
     explored = set()
     open = {normalize(x, y)}
     while len(open) > 0:
@@ -76,7 +76,7 @@ class IncomeEstimation:
             # TODO consider the HPT of attacking an enemy ship
             amount_can_gain = constants.MAX_HALITE - ship.halite_amount
 
-            # TODO this multiplier makes halite have greater weight than time, maybe experiment?
+            # TODO this multiplier makes halite have greater weight than time, maybe experiment with different kinds?
             raw_amount_extracted = constants.EXTRACT_RATIO * gmap[destination].halite_amount
             amount_gained = min(amount_can_gain, raw_amount_extracted)
             turns_to_collect = 1
@@ -88,13 +88,13 @@ class IncomeEstimation:
         return amount_gained / total_turns
 
     @staticmethod
-    def roi(game, me, gmap, ships):
+    def roi(game, me, gmap):
         # TODO take into account growth curve?
         # TODO take into account efficiency?
         # TODO take into account turns remaining?
         # TODO take into account number of other players? not working well in 4 player mode
         halite_remaining = sum(map(lambda p: gmap[p].halite_amount, get_positions(gmap)))
-        my_ships = len(ships)
+        my_ships = len(me.get_ships())
         total_ships = sum([len(player.get_ships()) for player in game.players.values()])
         other_ships = total_ships - my_ships
         expected_halite = my_ships * halite_remaining / total_ships if total_ships > 0 else 0
@@ -136,7 +136,7 @@ class ResourceAllocation:
                 hpt_by_assignment[(p[0], p[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i],
                                                                              closest_dropoff, Position(*p))
 
-            for ps in iterate_by_radius(gmap, ships[i].position.x, ships[i].position.y):
+            for ps in iterate_by_radius(ships[i].position.x, ships[i].position.y):
                 ps -= scheduled_positions
                 if len(ps) > 0:
                     best = max(ps - scheduled_positions, key=halite_by_pos.get)
@@ -164,10 +164,6 @@ class ResourceAllocation:
                 break
 
         return goals
-
-    @staticmethod
-    def goal_for(me, gmap, ship, available_positions):
-        return max(available_positions, key=lambda p: IncomeEstimation.hpt_of(me, gmap, ship, p))
 
 
 class PathPlanning:
@@ -314,6 +310,16 @@ class Commander:
         self.game.end_turn(queue)
         log('Turn took {}'.format(datetime.now() - start_time))
 
+    def can_make_ship(self, me, gmap, next_positions):
+        have_enough_halite = me.halite_amount >= constants.SHIP_COST
+        not_occupied = not gmap[me.shipyard].is_occupied
+        not_occupied_next_turn = me.shipyard.position not in next_positions
+        return have_enough_halite and not_occupied and not_occupied_next_turn
+
+    def should_make_ship(self, me, gmap):
+        roi = IncomeEstimation.roi(self.game, me, gmap)
+        return roi > 0 and len(me.get_ships()) < 50 and self.turns_remaining > 50
+
     def produce_commands(self, me, gmap):
         ships = list(me.get_ships())
         ships = sorted(ships, key=lambda s: gmap.calculate_distance(s.position, me.shipyard.position), reverse=True)
@@ -332,13 +338,10 @@ class Commander:
         log('planned paths')
         log(next_positions)
 
-        if me.halite_amount >= constants.SHIP_COST and not gmap[
-            me.shipyard].is_occupied and me.shipyard.position not in next_positions:
-            roi = IncomeEstimation.roi(self.game, me, gmap, ships)
-            if roi > 0 and len(ships) < 50 and self.turns_remaining > 50:
-                queue.append(me.shipyard.spawn())
-
-        log('tried spawning')
+        # TODO experiment with placing this first?
+        if self.can_make_ship(me, gmap, next_positions) and self.should_make_ship(me, gmap):
+            log('spawning')
+            queue.append(me.shipyard.spawn())
 
         return queue
 
