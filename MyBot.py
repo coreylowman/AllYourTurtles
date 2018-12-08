@@ -8,8 +8,7 @@ from datetime import datetime
 import random
 import logging
 from collections import defaultdict
-from math import inf
-
+import math
 
 """
 1. When to return? - when its more valuable to turn in halite than to keep collecting (take into account halite from new turtles created by turn in)
@@ -81,12 +80,15 @@ def get_halite_by_position(gmap):
 
 
 def clear_log():
-    open('bot-{}.log'.format(commander.game.my_id), 'w').close()
+    # open('bot-{}.log'.format(commander.game.my_id), 'w').close()
+    pass
 
 
 def log(s):
-    with open('bot-{}.log'.format(commander.game.my_id), 'a') as fp:
-        fp.write('[{}] {}\n'.format(datetime.now(), s))
+    # with open('bot-{}.log'.format(commander.game.my_id), 'a') as fp:
+    #     fp.write('[{}] {}\n'.format(datetime.now(), s))
+    # logging.info('[{}] {}'.format(datetime.now(), s))
+    pass
 
 
 class IncomeEstimation:
@@ -159,20 +161,23 @@ class ResourceAllocation:
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
         log('building assignments')
-        
+
         halite_by_pos = get_halite_by_position(gmap)
 
         hpt_by_assignment = {}
         for i in unscheduled:
             closest_dropoff = me.shipyard.position
             for p in dropoffs:
-                hpt_by_assignment[(p[0], p[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, Position(*p))
+                hpt_by_assignment[(p[0], p[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i],
+                                                                             closest_dropoff, Position(*p))
 
             for ps in iterate_by_radius(gmap, ships[i].position.x, ships[i].position.y):
                 ps -= scheduled_positions
                 if len(ps) > 0:
                     best = max(ps - scheduled_positions, key=halite_by_pos.get)
-                    hpt_by_assignment[(best[0], best[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, Position(*best))
+                    hpt_by_assignment[(best[0], best[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining,
+                                                                                       ships[i], closest_dropoff,
+                                                                                       Position(*best))
 
         log('sorting assignments')
 
@@ -183,7 +188,7 @@ class ResourceAllocation:
         for x, y, i in assignments:
             if scheduled[i] or (x, y) in scheduled_positions:
                 continue
-            
+
             goals[i] = Position(x, y)
             scheduled[i] = True
             unscheduled.remove(i)
@@ -216,12 +221,10 @@ class PathPlanning:
         for i in range(n):
             if current[i] == goals[i]:
                 raw_pos, t = (current[i].x, current[i].y), 1
-                if raw_pos in dropoffs and turns_remaining - t < width:
-                    continue
-                else:
+                if raw_pos not in dropoffs or turns_remaining - t > width:
                     reservation_table[t].add(raw_pos)
                 scheduled[i] = True
-        
+
         unscheduled = [i for i in range(n) if not scheduled[i]]
         total = len(unscheduled)
 
@@ -231,9 +234,7 @@ class PathPlanning:
             log('ship {} ({}/{})...'.format(i, q, total))
             path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservation_table)
             for raw_pos, t in path:
-                if raw_pos in dropoffs and turns_remaining - t < width:
-                    continue
-                else:
+                if raw_pos not in dropoffs or turns_remaining - t > width:
                     reservation_table[t].add(raw_pos)
             next_positions[i] = Position(*path[1][0])
 
@@ -252,16 +253,19 @@ class PathPlanning:
     @staticmethod
     def a_star(gmap, start, goal, halite, reservation_table, WINDOW=8):
         """windowed hierarchical cooperative a*"""
+
         def heuristic(p):
-            return gmap.calculate_distance(p, goal)
+            # distance is time + cost, so heuristic is time + distance, but time is just 1 for every square, so
+            # we can just double
+            return 2 * gmap.calculate_distance(p, goal)
 
         start_raw = normalize(start.x, start.y)
         goal_raw = normalize(goal.x, goal.y)
 
-        log('{} -> {}'.format(start_raw, goal_raw))
+        # log('{} -> {}'.format(start_raw, goal_raw))
 
         if start_raw == goal_raw:
-            return [(start_raw, 0), (start_raw, 1)]
+            return [(start_raw, 0), (goal_raw, 1)]
 
         max_halite = max(map(lambda p: gmap[p].halite_amount, get_positions(gmap)))
 
@@ -279,13 +283,13 @@ class PathPlanning:
 
         while len(open_set) > 0:
             cpt = min(open_set, key=lambda pt: f_score[pt[0]])
-            
+
             current_raw, t = normalize(*cpt[0]), cpt[1]
             current = Position(*current_raw)
             if current == goal:
                 return PathPlanning._reconstruct_path(came_from, (current_raw, t))
 
-#            log('- Expanding {} at {}'.format(current_raw, t))
+            # log('- Expanding {} at {}. f={}'.format(current_raw, t, f_score[current_raw]))
 
             open_set.remove(cpt)
             closed_set.add(cpt)
@@ -309,12 +313,12 @@ class PathPlanning:
                 elif g >= g_score[neighbor_raw]:
                     continue
 
-#                log('-- Adding {} at {}'.format(neighbor_raw, nt))
-
                 came_from[npt] = (current_raw, t)
                 g_score[neighbor_raw] = g
                 h_score[neighbor_raw] = heuristic(neighbor)
                 f_score[neighbor_raw] = g_score[neighbor_raw] + h_score[neighbor_raw]
+
+                # log('-- Adding {} at {}. h={} g={}'.format(neighbor_raw, nt, h_score[neighbor_raw], g_score[neighbor_raw]))
 
         return [(start_raw, 0), (start_raw, 1)]
 
@@ -341,7 +345,7 @@ class Commander:
         self.game.update_frame()
         start_time = datetime.now()
         clear_log()
-        log('Starting turn')
+        log('Starting turn {}'.format(self.game.turn_number))
         queue = self.produce_commands(self.game.me, self.game.game_map)
         self.game.end_turn(queue)
         log('Turn took {}'.format(datetime.now() - start_time))
@@ -352,16 +356,20 @@ class Commander:
         ships = sorted(ships, key=lambda s: s.halite_amount, reverse=True)
 
         log('sorted ships')
+        log(ships)
 
         goals = ResourceAllocation.goals_for_ships(me, gmap, ships, self.turns_remaining)
 
         log('allocated goals')
+        log(goals)
 
         queue, next_positions = PathPlanning.commands_for(me, gmap, ships, self.turns_remaining, goals)
 
         log('planned paths')
+        log(next_positions)
 
-        if me.halite_amount >= constants.SHIP_COST and not gmap[me.shipyard].is_occupied and me.shipyard.position not in next_positions:
+        if me.halite_amount >= constants.SHIP_COST and not gmap[
+            me.shipyard].is_occupied and me.shipyard.position not in next_positions:
             roi = IncomeEstimation.roi(self.game, me, gmap, ships)
             if roi > 0 and len(ships) < 50 and self.turns_remaining > 50:
                 queue.append(me.shipyard.spawn())
@@ -378,5 +386,6 @@ def main():
     height = commander.game.game_map.height
     while True:
         commander.run_once()
+
 
 main()
