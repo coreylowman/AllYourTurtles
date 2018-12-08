@@ -1,0 +1,5 @@
+*.log
+*.hlt
+*.exe
+**/__pycache__
+.idea/
