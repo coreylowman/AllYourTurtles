@@ -31,10 +31,20 @@ def cardinal_neighbors(p):
     return [normalize(p[0] + d[0], p[1] + d[1]) for d in cardinal_directions]
 
 
-def iterate_by_radius(x, y):
+def direction_between(gmap, a, b):
+    for dir in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)]:
+        if gmap.normalize(a.directional_offset(dir)) == gmap.normalize(b):
+            return dir
+
+
+def iterate_by_radius(x, y, max_radius=math.inf):
     explored = set()
     open = {normalize(x, y)}
+    r = 0
     while len(open) > 0:
+        if r > max_radius:
+            return
+
         yield open
 
         next = set()
@@ -44,6 +54,7 @@ def iterate_by_radius(x, y):
                     next.add(n)
                     explored.add(n)
         open = next
+        r += 1
 
 
 def get_halite_by_position(gmap):
@@ -67,7 +78,7 @@ class IncomeEstimation:
             # TODO also add in value indicating hpt of creating a new ship
             amount_gained = ship.halite_amount
             turns_to_collect = 0
-        elif turns_remaining < closest_dropoff_distance * 1.5:
+        elif turns_remaining < closest_dropoff_distance * 2:
             amount_gained = 0
             turns_to_collect = 1
         else:
@@ -110,12 +121,34 @@ class ResourceAllocation:
         n = len(ships)
         goals = [ships[i].position for i in range(n)]
         scheduled = [False for i in range(n)]
-        dropoffs = {(me.shipyard.position.x, me.shipyard.position.y)}
+        dropoffs = [me.shipyard.position]
+        dropoffs.extend([drp.position for drp in me.get_dropoffs()])
+
+        log('allocating dropoffs')
+        halite = me.halite_amount
+        while halite > constants.DROPOFF_COST:
+            # TODO may have less than 4k halite, but still be able to create dropoff due to bonus
+            log('gathering potential dropoffs')
+            score_by_dropoff = {}
+            for i in range(n):
+                can, score = ResourceAllocation.can_convert_to_dropoff(me, gmap, ships[i], dropoffs)
+                if can:
+                    score_by_dropoff[i] = score
+
+            if len(score_by_dropoff) == 0:
+                break
+
+            log('choosing best dropoff')
+            i = max(score_by_dropoff, key=score_by_dropoff.get)
+            scheduled[i] = True
+            goals[i] = None
+            dropoffs.append(ships[i].position)
+            halite -= constants.DROPOFF_COST - gmap[ships[i].position].halite_amount - ships[i].halite_amount
+
+        unscheduled = [i for i in range(n) if not scheduled[i]]
 
         log('allocating stills')
-
-        # schedule stills
-        for i in range(n):
+        for i in unscheduled:
             if gmap[ships[i].position].halite_amount / constants.MOVE_COST_RATIO > ships[i].halite_amount:
                 scheduled[i] = True
                 p = gmap.normalize(ships[i].position)
@@ -130,18 +163,22 @@ class ResourceAllocation:
 
         hpt_by_assignment = {}
         for i in unscheduled:
-            closest_dropoff = me.shipyard.position
-            for p in dropoffs:
-                hpt_by_assignment[(p[0], p[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i],
-                                                                             closest_dropoff, Position(*p))
+            closest_dropoff = min(dropoffs, key=lambda drp: gmap.calculate_distance(ships[i].position, drp))
 
+            for p in dropoffs:
+                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, p)
+                hpt_by_assignment[(p.x, p.y, i)] = hpt
+
+            # TODO don't assign to a position nearby with an enemy ship on it
             for ps in iterate_by_radius(ships[i].position.x, ships[i].position.y):
                 ps -= scheduled_positions
-                if len(ps) > 0:
-                    best = max(ps - scheduled_positions, key=halite_by_pos.get)
-                    hpt_by_assignment[(best[0], best[1], i)] = IncomeEstimation.hpt_of(me, gmap, turns_remaining,
-                                                                                       ships[i], closest_dropoff,
-                                                                                       Position(*best))
+                if len(ps) == 0:
+                    continue
+
+                best_raw = max(ps, key=halite_by_pos.get)
+                best = Position(*best_raw)
+                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, best)
+                hpt_by_assignment[(best_raw[0], best_raw[1], i)] = hpt
 
         log('sorting assignments')
 
@@ -156,7 +193,7 @@ class ResourceAllocation:
             goals[i] = Position(x, y)
             scheduled[i] = True
             unscheduled.remove(i)
-            if (x, y) not in dropoffs:
+            if goals[i] not in dropoffs:
                 scheduled_positions.add((x, y))
 
             if len(unscheduled) == 0:
@@ -164,19 +201,43 @@ class ResourceAllocation:
 
         return goals
 
+    @staticmethod
+    def can_convert_to_dropoff(me, gmap, ship, dropoffs, dropoff_radius=8):
+        position = ship.position
+        for drp in dropoffs:
+            if gmap.calculate_distance(position, drp) <= 2 * dropoff_radius:
+                return False, 0
+
+        position = gmap.normalize(position)
+
+        # TODO check goals of ships, not current positions
+        halite_around = ship.halite_amount + gmap[position].halite_amount
+        turtles_around = 0
+        for ps in iterate_by_radius(position.x, position.y, dropoff_radius):
+            for p in ps:
+                p = Position(*p)
+                halite_around += gmap[p].halite_amount
+                if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
+                    turtles_around += 1
+                    halite_around += gmap[p].ship.halite_amount
+
+        return halite_around > constants.DROPOFF_COST and turtles_around > 2, halite_around
+
 
 class PathPlanning:
     @staticmethod
-    def commands_for(me, gmap, ships, other_ships, turns_remaining, goals):
+    def next_positions_for(me, gmap, ships, other_ships, turns_remaining, goals):
         n = len(ships)
         current = [ships[i].position for i in range(n)]
         next_positions = [current[i] for i in range(n)]
         reservation_table = defaultdict(set)
         scheduled = [False for i in range(n)]
         dropoffs = {(me.shipyard.position.x, me.shipyard.position.y)}
+        dropoffs.update({(drp.position.x, drp.position.y) for drp in me.get_dropoffs()})
 
         log('reserving other ship positions')
 
+        # TODO if we outnumber the other ship, dont reserve its location
         for ship in other_ships:
             curr = normalize(ship.position.x, ship.position.y)
             reservation_table[0].add(curr)
@@ -184,11 +245,18 @@ class PathPlanning:
             for next in cardinal_neighbors(curr):
                 reservation_table[1].add(next)
 
-        log('locking stills')
-
-        # lock in anyone that wants to stay still
+        log('converting dropoffs')
         for i in range(n):
+            if goals[i] is None:
+                scheduled[i] = True
+                next_positions[i] = None
+
+        unscheduled = [i for i in range(n) if not scheduled[i]]
+
+        log('locking stills')
+        for i in unscheduled:
             if current[i] == goals[i]:
+                log(ships[i])
                 raw_pos, t = (current[i].x, current[i].y), 1
                 if raw_pos not in dropoffs or turns_remaining - t > width:
                     reservation_table[t].add(raw_pos)
@@ -200,8 +268,9 @@ class PathPlanning:
         log('planning paths')
 
         for q, i in enumerate(unscheduled):
-            log('ship {} ({}/{})...'.format(i, q, total))
+            log('ship {} ({}/{})...'.format(ships[i].id, q, total))
             path = PathPlanning.a_star(gmap, current[i], goals[i], reservation_table)
+            log(path)
             for raw_pos, t in path:
                 if raw_pos not in dropoffs or turns_remaining - t > width:
                     reservation_table[t].add(raw_pos)
@@ -209,9 +278,7 @@ class PathPlanning:
 
         log('paths planned')
 
-        directions = [PathPlanning.direction_between(gmap, current[i], next_positions[i]) for i in range(n)]
-        commands = [ships[i].move(directions[i]) for i in range(n)]
-        return commands, next_positions
+        return next_positions
 
     @staticmethod
     def path_stats(gmap, start, goal):
@@ -224,12 +291,6 @@ class PathPlanning:
             else:
                 delta -= gmap[Position(*prev)].halite_amount / constants.MOVE_COST_RATIO
         return path, delta
-
-    @staticmethod
-    def direction_between(gmap, a, b):
-        for dir in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)]:
-            if gmap.normalize(a.directional_offset(dir)) == gmap.normalize(b):
-                return dir
 
     @staticmethod
     def a_star(gmap, start, goal, reservation_table, WINDOW=8):
@@ -301,6 +362,11 @@ class PathPlanning:
 
                 # log('-- Adding {} at {}. h={} g={}'.format(neighbor_raw, nt, h_score[neighbor_raw], g_score[neighbor_raw]))
 
+        if start_raw in reservation_table[1]:
+            for neighbor_raw in cardinal_neighbors(start_raw):
+                if neighbor_raw not in reservation_table[1]:
+                    return [(start_raw, 0), (neighbor_raw, 1)]
+
         return [(start_raw, 0), (start_raw, 1)]
 
     @staticmethod
@@ -330,10 +396,10 @@ class Commander:
         self.game.end_turn(queue)
         log('Turn took {}'.format(datetime.now() - start_time))
 
-    def can_make_ship(self, me, gmap, next_positions):
-        have_enough_halite = me.halite_amount >= constants.SHIP_COST
+    def can_make_ship(self, me, gmap, next_positions, halite_left):
+        have_enough_halite = halite_left >= constants.SHIP_COST
         not_occupied = not gmap[me.shipyard].is_occupied
-        not_occupied_next_turn = me.shipyard.position not in next_positions
+        not_occupied_next_turn = me.shipyard.position not in filter(None, next_positions)
         return have_enough_halite and not_occupied and not_occupied_next_turn
 
     def should_make_ship(self, me, gmap):
@@ -349,25 +415,30 @@ class Commander:
         for oid in self.game.others:
             other_ships.extend(self.game.players[oid].get_ships())
 
-        log('sorted ships')
-        log(ships)
+        log('sorted ships: {}'.format(ships))
 
         goals = ResourceAllocation.goals_for_ships(me, gmap, ships, self.turns_remaining)
+        log('allocated goals: {}'.format(goals))
 
-        log('allocated goals')
-        log(goals)
+        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
+        log('planned paths: {}'.format(next_positions))
 
-        queue, next_positions = PathPlanning.commands_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
+        halite_available = me.halite_amount
+        commands = []
+        for i in range(len(ships)):
+            if next_positions[i] is not None:
+                commands.append(ships[i].move(direction_between(gmap, ships[i].position, next_positions[i])))
+            else:
+                commands.append(ships[i].make_dropoff())
+                halite_available -= constants.DROPOFF_COST - ships[i].halite_amount - gmap[
+                    ships[i].position].halite_amount
+                log('Making dropoff with {}'.format(ships[i]))
 
-        log('planned paths')
-        log(next_positions)
-
-        # TODO experiment with placing this first?
-        if self.can_make_ship(me, gmap, next_positions) and self.should_make_ship(me, gmap):
+        if self.can_make_ship(me, gmap, next_positions, halite_available) and self.should_make_ship(me, gmap):
+            commands.append(me.shipyard.spawn())
             log('spawning')
-            queue.append(me.shipyard.spawn())
 
-        return queue
+        return commands
 
 
 def main():
