@@ -168,13 +168,22 @@ class ResourceAllocation:
 
 class PathPlanning:
     @staticmethod
-    def commands_for(me, gmap, ships, turns_remaining, goals):
+    def commands_for(me, gmap, ships, other_ships, turns_remaining, goals):
         n = len(ships)
         current = [ships[i].position for i in range(n)]
         next_positions = [current[i] for i in range(n)]
         reservation_table = defaultdict(set)
         scheduled = [False for i in range(n)]
         dropoffs = {(me.shipyard.position.x, me.shipyard.position.y)}
+
+        log('reserving other ship positions')
+
+        for ship in other_ships:
+            curr = normalize(ship.position.x, ship.position.y)
+            reservation_table[0].add(curr)
+            reservation_table[1].add(curr)
+            for next in cardinal_neighbors(curr):
+                reservation_table[1].add(next)
 
         log('locking stills')
 
@@ -325,6 +334,10 @@ class Commander:
         ships = sorted(ships, key=lambda s: gmap.calculate_distance(s.position, me.shipyard.position), reverse=True)
         ships = sorted(ships, key=lambda s: s.halite_amount, reverse=True)
 
+        other_ships = []
+        for oid in self.game.others:
+            other_ships.extend(self.game.players[oid].get_ships())
+
         log('sorted ships')
         log(ships)
 
@@ -333,7 +346,7 @@ class Commander:
         log('allocated goals')
         log(goals)
 
-        queue, next_positions = PathPlanning.commands_for(me, gmap, ships, self.turns_remaining, goals)
+        queue, next_positions = PathPlanning.commands_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
 
         log('planned paths')
         log(next_positions)
