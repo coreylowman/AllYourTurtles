@@ -204,6 +204,10 @@ class ResourceAllocation:
     @staticmethod
     def can_convert_to_dropoff(me, gmap, ship, dropoffs, dropoff_radius=8):
         position = ship.position
+
+        if gmap[position].has_structure:
+            return False, 0
+
         for drp in dropoffs:
             if gmap.calculate_distance(position, drp) <= 2 * dropoff_radius:
                 return False, 0
