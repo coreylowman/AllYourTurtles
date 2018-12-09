@@ -202,7 +202,7 @@ class ResourceAllocation:
         return goals
 
     @staticmethod
-    def can_convert_to_dropoff(me, gmap, ship, dropoffs, dropoff_radius=8):
+    def can_convert_to_dropoff(me, gmap, ship, dropoffs, dropoff_radius=16):
         position = ship.position
 
         if gmap[position].has_structure:
@@ -215,7 +215,7 @@ class ResourceAllocation:
         position = gmap.normalize(position)
 
         # TODO check goals of ships, not current positions
-        halite_around = ship.halite_amount + gmap[position].halite_amount
+        halite_around = gmap[position].halite_amount
         turtles_around = 0
         for ps in iterate_by_radius(position.x, position.y, dropoff_radius):
             for p in ps:
@@ -223,9 +223,8 @@ class ResourceAllocation:
                 halite_around += gmap[p].halite_amount
                 if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
                     turtles_around += 1
-                    halite_around += gmap[p].ship.halite_amount
 
-        return halite_around > constants.DROPOFF_COST and turtles_around > 2, halite_around
+        return halite_around > 1.5 * constants.DROPOFF_COST and turtles_around > 2, halite_around
 
 
 class PathPlanning:
