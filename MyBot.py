@@ -60,7 +60,7 @@ def log(s):
 
 class IncomeEstimation:
     @staticmethod
-    def hpt_of(me, gmap, turns_remaining, ship, closest_dropoff, destination):
+    def hpt_of(me, gmap, turns_remaining, ship, closest_dropoff, destination, halite_weight=4, time_weight=1):
         turns_to_move = gmap.calculate_distance(ship.position, destination)
         closest_dropoff_distance = gmap.calculate_distance(ship.position, closest_dropoff)
         if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
@@ -75,9 +75,7 @@ class IncomeEstimation:
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
             amount_can_gain = constants.MAX_HALITE - ship.halite_amount
-
-            # TODO this multiplier makes halite have greater weight than time, maybe experiment with different kinds?
-            raw_amount_extracted = constants.EXTRACT_RATIO * gmap[destination].halite_amount
+            raw_amount_extracted = gmap[destination].halite_amount
             amount_gained = min(amount_can_gain, raw_amount_extracted)
             turns_to_collect = 1
 
@@ -85,7 +83,8 @@ class IncomeEstimation:
         if total_turns == 0:
             total_turns = 1
 
-        return amount_gained / total_turns
+        # TODO this multiplier makes halite have greater weight than time, maybe experiment with different kinds?
+        return (halite_weight * amount_gained) / (total_turns * time_weight)
 
     @staticmethod
     def roi(game, me, gmap):
@@ -202,7 +201,7 @@ class PathPlanning:
 
         for q, i in enumerate(unscheduled):
             log('ship {} ({}/{})...'.format(i, q, total))
-            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservation_table)
+            path = PathPlanning.a_star(gmap, current[i], goals[i], reservation_table)
             for raw_pos, t in path:
                 if raw_pos not in dropoffs or turns_remaining - t > width:
                     reservation_table[t].add(raw_pos)
@@ -215,13 +214,25 @@ class PathPlanning:
         return commands, next_positions
 
     @staticmethod
+    def path_stats(gmap, start, goal):
+        delta = 0
+        path = PathPlanning.a_star(gmap, start, goal, defaultdict(set))
+        for i in range(1, len(path)):
+            prev, cur = path[i - 1], path[i]
+            if prev == cur:
+                delta += gmap[Position(*prev)].halite_amount / constants.EXTRACT_RATIO
+            else:
+                delta -= gmap[Position(*prev)].halite_amount / constants.MOVE_COST_RATIO
+        return path, delta
+
+    @staticmethod
     def direction_between(gmap, a, b):
         for dir in [(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1)]:
             if gmap.normalize(a.directional_offset(dir)) == gmap.normalize(b):
                 return dir
 
     @staticmethod
-    def a_star(gmap, start, goal, halite, reservation_table, WINDOW=8):
+    def a_star(gmap, start, goal, reservation_table, WINDOW=8):
         """windowed hierarchical cooperative a*"""
 
         def heuristic(p):
