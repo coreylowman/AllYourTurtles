@@ -4,10 +4,12 @@ from . import constants
 from .entity import Entity, Shipyard, Ship, Dropoff
 from .positionals import Direction, Position
 
+
 class Player:
     """
     Player object containing all items/metadata pertinent to the player.
     """
+
     def __init__(self, player_id, shipyard, halite=0):
         self.id = player_id
         self.shipyard = shipyard
@@ -55,7 +57,6 @@ class Player:
         """
         return ship_id in self._ships
 
-
     @staticmethod
     def _generate():
         """
@@ -80,6 +81,7 @@ class Player:
 
 class MapCell:
     """A cell on the game map."""
+
     def __init__(self, position, halite_amount):
         self.position = position
         self.halite_amount = halite_amount
@@ -139,10 +141,15 @@ class GameMap:
     Can be indexed by a position, or by a contained entity.
     Coordinates start at 0. Coordinates are normalized for you
     """
+
     def __init__(self, cells, width, height):
         self.width = width
         self.height = height
         self._cells = cells
+        self.positions = []
+        for y in range(height):
+            for x in range(width):
+                self.positions.append((x, y))
 
     def __getitem__(self, location):
         """
@@ -150,12 +157,17 @@ class GameMap:
         :param location: the position or entity to access in this map
         :return: the contents housing that cell or entity
         """
-        if isinstance(location, Position):
+        if isinstance(location, tuple):
+            return self._cells[location[1]][location[0]]
+        elif isinstance(location, Position):
             location = self.normalize(location)
             return self._cells[location.y][location.x]
         elif isinstance(location, Entity):
             return self._cells[location.position.y][location.position.x]
         return None
+
+    def halite_at(self, position):
+        return self._cells[position[1]][position[0]].halite_amount
 
     def calculate_distance(self, source, target):
         """
@@ -167,7 +179,11 @@ class GameMap:
         """
         resulting_position = abs(source - target)
         return min(resulting_position.x, self.width - resulting_position.x) + \
-            min(resulting_position.y, self.height - resulting_position.y)
+               min(resulting_position.y, self.height - resulting_position.y)
+
+    def dist(self, source, target):
+        res = abs(source[0] - target[0]), abs(source[1] - target[1])
+        return min(res[0], self.width - res[0]) + min(res[1], self.height - res[1])
 
     def normalize(self, position):
         """
@@ -178,7 +194,10 @@ class GameMap:
         :param position: A position object.
         :return: A normalized position object fitting within the bounds of the map
         """
-        return Position(position.x % self.width, position.y % self.height)
+        if isinstance(position, tuple):
+            return position[0] % self.width, position[1] % self.height
+        else:
+            return Position(position.x % self.width, position.y % self.height)
 
     @staticmethod
     def _get_target_direction(source, target):

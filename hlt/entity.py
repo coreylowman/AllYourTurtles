@@ -13,6 +13,7 @@ class Entity(abc.ABC):
         self.owner = owner
         self.id = id
         self.position = position
+        self.pos = position.x, position.y
 
     @staticmethod
     def _generate(player_id):
