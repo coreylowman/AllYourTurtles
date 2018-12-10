@@ -145,9 +145,8 @@ class ResourceAllocation:
         for i in unscheduled:
             if gmap[ships[i].pos].halite_amount / constants.MOVE_COST_RATIO > ships[i].halite_amount:
                 scheduled[i] = True
-                p = normalize(ships[i].pos)
-                available_positions.remove(p)
-                scheduled_positions.add(p)
+                available_positions.remove(ships[i].pos)
+                scheduled_positions.add(ships[i].pos)
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
@@ -194,19 +193,17 @@ class ResourceAllocation:
 
     @staticmethod
     def can_convert_to_dropoff(me, gmap, ship, dropoffs, dropoff_radius=16):
-        position = normalize(ship.pos)
-
-        if gmap[position].has_structure:
+        if gmap[ship.pos].has_structure:
             return False, 0
 
         for drp in dropoffs:
-            if gmap.dist(position, drp) <= 2 * dropoff_radius:
+            if gmap.dist(ship.pos, drp) <= 2 * dropoff_radius:
                 return False, 0
 
         # TODO check goals of ships, not current positions
-        halite_around = gmap[position].halite_amount
+        halite_around = gmap[ship.pos].halite_amount
         turtles_around = 0
-        for ps in iterate_by_radius(position, max_radius=dropoff_radius):
+        for ps in iterate_by_radius(ship.pos, max_radius=dropoff_radius):
             for p in ps:
                 halite_around += gmap[p].halite_amount
                 if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
@@ -223,17 +220,16 @@ class PathPlanning:
         next_positions = [current[i] for i in range(n)]
         reservation_table = defaultdict(set)
         scheduled = [False for i in range(n)]
-        dropoffs = {normalize(me.shipyard.pos)}
-        dropoffs.update({normalize(drp.pos) for drp in me.get_dropoffs()})
+        dropoffs = {me.shipyard.pos}
+        dropoffs.update({drp.pos for drp in me.get_dropoffs()})
 
         log('reserving other ship positions')
 
         # TODO if we outnumber the other ship, dont reserve its location
         for ship in other_ships:
-            curr = normalize(ship.pos)
-            reservation_table[0].add(curr)
-            reservation_table[1].add(curr)
-            for next in cardinal_neighbors(curr):
+            reservation_table[0].add(ship.pos)
+            reservation_table[1].add(ship.pos)
+            for next in cardinal_neighbors(ship.pos):
                 reservation_table[1].add(next)
 
         log('converting dropoffs')
@@ -431,8 +427,6 @@ class Commander:
 
 def main():
     commander = Commander()
-    constants.WIDTH = commander.game.game_map.width
-    constants.HEIGHT = commander.game.game_map.height
     while True:
         commander.run_once()
 

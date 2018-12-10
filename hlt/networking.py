@@ -35,6 +35,7 @@ class Game:
         self.others = list(self.players)
         self.others.remove(self.my_id)
         self.game_map = GameMap._generate()
+        constants.set_dimensions(self.game_map.width, self.game_map.height)
 
     def ready(self, name):
         """

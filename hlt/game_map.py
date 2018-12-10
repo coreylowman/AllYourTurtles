@@ -64,7 +64,7 @@ class Player:
         :return: The player object
         """
         player, shipyard_x, shipyard_y = map(int, input().split())
-        return Player(player, Shipyard(player, -1, Position(shipyard_x, shipyard_y)))
+        return Player(player, Shipyard(player, -1, Position(shipyard_x, shipyard_y, normalize=False)))
 
     def _update(self, num_ships, num_dropoffs, halite):
         """
@@ -259,7 +259,7 @@ class GameMap:
         for y_position in range(map_height):
             cells = input().split()
             for x_position in range(map_width):
-                game_map[y_position][x_position] = MapCell(Position(x_position, y_position),
+                game_map[y_position][x_position] = MapCell(Position(x_position, y_position, normalize=False),
                                                            int(cells[x_position]))
         return GameMap(game_map, map_width, map_height)
 

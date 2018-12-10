@@ -99,3 +99,9 @@ def load_constants(constants):
     ships than you within this distance.
     """
     CAPTURE_SHIP_ADVANTAGE = constants['SHIPS_ABOVE_FOR_CAPTURE']
+
+
+def set_dimensions(width, height):
+    global WIDTH, HEIGHT
+    WIDTH = width
+    HEIGHT = height
