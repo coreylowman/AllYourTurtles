@@ -4,6 +4,7 @@
 import hlt
 from hlt import constants, Position, Direction, entity
 
+from copy import deepcopy
 from datetime import datetime
 import random
 import logging
@@ -141,15 +142,6 @@ class ResourceAllocation:
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
-        log('allocating stills')
-        for i in unscheduled:
-            if gmap[ships[i].pos].halite_amount / constants.MOVE_COST_RATIO > ships[i].halite_amount:
-                scheduled[i] = True
-                available_positions.remove(ships[i].pos)
-                scheduled_positions.add(ships[i].pos)
-
-        unscheduled = [i for i in range(n) if not scheduled[i]]
-
         log('building assignments')
 
         hpt_by_assignment = {}
@@ -242,7 +234,7 @@ class PathPlanning:
 
         log('locking stills')
         for i in unscheduled:
-            if current[i] == goals[i]:
+            if current[i] == goals[i] or gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO > ships[i].halite_amount:
                 log(ships[i])
                 if current[i] not in dropoffs or turns_remaining - 1 > constants.WIDTH:
                     reservation_table[1].add(current[i])
@@ -255,7 +247,7 @@ class PathPlanning:
 
         for q, i in enumerate(unscheduled):
             log('ship {} ({}/{})...'.format(ships[i].id, q, total))
-            path = PathPlanning.a_star(gmap, current[i], goals[i], reservation_table)
+            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservation_table)
             log(path)
             for raw_pos, t in path:
                 if raw_pos not in dropoffs or turns_remaining - t > constants.HEIGHT:
@@ -267,19 +259,7 @@ class PathPlanning:
         return next_positions
 
     @staticmethod
-    def path_stats(gmap, start, goal):
-        delta = 0
-        path = PathPlanning.a_star(gmap, start, goal, defaultdict(set))
-        for i in range(1, len(path)):
-            prev, cur = path[i - 1], path[i]
-            if prev == cur:
-                delta += gmap[prev].halite_amount / constants.EXTRACT_RATIO
-            else:
-                delta -= gmap[prev].halite_amount / constants.MOVE_COST_RATIO
-        return path, delta
-
-    @staticmethod
-    def a_star(gmap, start, goal, reservation_table, WINDOW=8):
+    def a_star(gmap, start, goal, starting_halite, reservation_table, WINDOW=8):
         """windowed hierarchical cooperative a*"""
 
         start = normalize(start)
@@ -295,7 +275,8 @@ class PathPlanning:
         if start == goal and goal not in reservation_table[1]:
             return [(start, 0), (goal, 1)]
 
-        max_halite = max(map(gmap.halite_at, gmap.positions))
+        halite_by_pos = get_halite_by_position(gmap)
+        max_halite = max(halite_by_pos.values())
 
         closed_set = set()
         open_set = set()
@@ -303,15 +284,26 @@ class PathPlanning:
         h_score = defaultdict(lambda: math.inf)
         f_score = defaultdict(lambda: math.inf)
         came_from = {}
+        halite_at = {}
+        extractions_at = defaultdict(list)
 
         open_set.add((start, 0))
         g_score[start] = 0
         h_score[start] = heuristic(start)
         f_score[start] = g_score[start] + h_score[start]
+        halite_at[(start, 0)] = starting_halite
+        extractions_at[(start, 0)] = []
 
         while len(open_set) > 0:
             cpt = min(open_set, key=lambda pt: f_score[pt[0]])
             current, t = cpt
+
+            halite_left = halite_at[cpt]
+
+            halite_on_ground = gmap[current].halite_amount
+            for pos, pt, amt in extractions_at[cpt]:
+                if pos == current:
+                    halite_on_ground -= amt
 
             if current == goal:
                 return PathPlanning._reconstruct_path(came_from, cpt)
@@ -321,10 +313,16 @@ class PathPlanning:
             open_set.remove(cpt)
             closed_set.add(cpt)
 
-            move_cost = gmap[current].halite_amount / max_halite
+            raw_move_cost = halite_on_ground / constants.MOVE_COST_RATIO
+            raw_extracted = halite_on_ground / constants.EXTRACT_RATIO
+            move_cost = halite_on_ground / max_halite
             nt = t + 1
 
-            for neighbor in cardinal_neighbors(current) + [current]:
+            neighbors = [current]
+            if halite_on_ground / constants.MOVE_COST_RATIO <= halite_left:
+                neighbors.extend(cardinal_neighbors(current))
+
+            for neighbor in neighbors:
                 npt = (neighbor, nt)
 
                 if npt in closed_set or (nt < WINDOW and neighbor in reservation_table[nt]):
@@ -344,6 +342,13 @@ class PathPlanning:
                 h_score[neighbor] = heuristic(neighbor)
                 f_score[neighbor] = g_score[neighbor] + h_score[neighbor]
 
+                if current == neighbor:
+                    extracted = raw_extracted
+                    halite_at[npt] = halite_left + extracted
+                    extractions_at[npt] = extractions_at[cpt] + [(neighbor, nt, extracted)]
+                else:
+                    halite_at[npt] = halite_left - raw_move_cost
+                    extractions_at[npt] = deepcopy(extractions_at[cpt])
                 # log('-- Adding {} at {}. h={} g={}'.format(neighbor_raw, nt, h_score[neighbor_raw], g_score[neighbor_raw]))
 
         if start in reservation_table[1]:
