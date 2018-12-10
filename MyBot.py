@@ -10,14 +10,10 @@ import logging
 from collections import defaultdict
 import math
 
-width = 0
-height = 0
-cardinal_directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-
 
 def normalize(p):
     x, y = p
-    return x % width, y % height
+    return x % constants.WIDTH, y % constants.HEIGHT
 
 
 def add(a, b):
@@ -25,14 +21,14 @@ def add(a, b):
 
 
 def cardinal_neighbors(p):
-    return [normalize(add(p, d)) for d in cardinal_directions]
+    return [normalize(add(p, d)) for d in constants.CARDINAL_DIRECTIONS]
 
 
 def direction_between(a, b):
     if normalize(a) == normalize(b):
         return 0, 0
 
-    for dir in cardinal_directions:
+    for dir in constants.CARDINAL_DIRECTIONS:
         if normalize(add(a, dir)) == normalize(b):
             return dir
 
@@ -252,7 +248,7 @@ class PathPlanning:
         for i in unscheduled:
             if current[i] == goals[i]:
                 log(ships[i])
-                if current[i] not in dropoffs or turns_remaining - 1 > width:
+                if current[i] not in dropoffs or turns_remaining - 1 > constants.WIDTH:
                     reservation_table[1].add(current[i])
                 scheduled[i] = True
 
@@ -266,7 +262,7 @@ class PathPlanning:
             path = PathPlanning.a_star(gmap, current[i], goals[i], reservation_table)
             log(path)
             for raw_pos, t in path:
-                if raw_pos not in dropoffs or turns_remaining - t > width:
+                if raw_pos not in dropoffs or turns_remaining - t > constants.HEIGHT:
                     reservation_table[t].add(raw_pos)
             next_positions[i] = path[1][0]
 
@@ -434,10 +430,9 @@ class Commander:
 
 
 def main():
-    global width, height
     commander = Commander()
-    width = commander.game.game_map.width
-    height = commander.game.game_map.height
+    constants.WIDTH = commander.game.game_map.width
+    constants.HEIGHT = commander.game.game_map.height
     while True:
         commander.run_once()
 
