@@ -54,6 +54,18 @@ def iterate_by_radius(p, max_radius=math.inf):
         r += 1
 
 
+def ships_around(gmap, p, owner, max_radius):
+    ships, other_ships = 0, 0
+    for ps in iterate_by_radius(p, max_radius=max_radius):
+        for p in ps:
+            if gmap[p].is_occupied:
+                if gmap[p].ship.owner == owner:
+                    ships += 1
+                else:
+                    other_ships += 1
+    return ships, other_ships
+
+
 def get_halite_by_position(gmap):
     return {p: gmap[p].halite_amount for p in gmap.positions}
 
@@ -66,6 +78,7 @@ def log(s):
 class IncomeEstimation:
     @staticmethod
     def hpt_of(me, gmap, turns_remaining, ship, closest_dropoff, destination, halite_weight=4, time_weight=1):
+        # TODO consider attacking opponent
         turns_to_move = gmap.dist(ship.pos, destination)
         closest_dropoff_distance = gmap.dist(ship.pos, closest_dropoff)
         if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
@@ -215,12 +228,14 @@ class PathPlanning:
 
         log('reserving other ship positions')
 
-        # TODO if we outnumber the other ship, dont reserve its location
         for ship in other_ships:
             reservation_table[0].add(ship.pos)
-            reservation_table[1].add(ship.pos)
-            for neighbor in cardinal_neighbors(ship.pos):
-                reservation_table[1].add(neighbor)
+
+            my_ships, other_ships = ships_around(gmap, ship.pos, me.id, max_radius=8)
+            if my_ships < other_ships:
+                reservation_table[1].add(ship.pos)
+                for neighbor in cardinal_neighbors(ship.pos):
+                    reservation_table[1].add(neighbor)
 
         log('converting dropoffs')
         for i in range(n):
