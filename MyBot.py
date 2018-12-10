@@ -2,11 +2,10 @@
 
 # Import the Halite SDK, which will let you interact with the game.
 import hlt
-from hlt import constants, Position, Direction, entity
+from hlt import constants
 
 from copy import deepcopy
 from datetime import datetime
-import random
 import logging
 from collections import defaultdict
 import math
@@ -29,29 +28,29 @@ def direction_between(a, b):
     if normalize(a) == normalize(b):
         return 0, 0
 
-    for dir in constants.CARDINAL_DIRECTIONS:
-        if normalize(add(a, dir)) == normalize(b):
-            return dir
+    for d in constants.CARDINAL_DIRECTIONS:
+        if normalize(add(a, d)) == normalize(b):
+            return d
 
 
 def iterate_by_radius(p, max_radius=math.inf):
     p = normalize(p)
     explored = set()
-    open = {p}
+    current = {p}
     r = 0
-    while len(open) > 0:
+    while len(current) > 0:
         if r > max_radius:
             return
 
-        yield open
+        yield current
 
-        next = set()
-        for p in open:
+        nexts = set()
+        for p in current:
             for n in cardinal_neighbors(p):
                 if n not in explored:
-                    next.add(n)
+                    nexts.add(n)
                     explored.add(n)
-        open = next
+        current = nexts
         r += 1
 
 
@@ -101,7 +100,7 @@ class IncomeEstimation:
         halite_remaining = sum(map(gmap.halite_at, gmap.positions))
         my_ships = len(me.get_ships())
         total_ships = sum([len(player.get_ships()) for player in game.players.values()])
-        other_ships = total_ships - my_ships
+        # other_ships = total_ships - my_ships
         expected_halite = my_ships * halite_remaining / total_ships if total_ships > 0 else 0
         expected_halite_1 = (my_ships + 1) * halite_remaining / (total_ships + 1)
         halite_gained = expected_halite_1 - expected_halite
@@ -111,7 +110,6 @@ class IncomeEstimation:
 class ResourceAllocation:
     @staticmethod
     def goals_for_ships(me, gmap, ships, turns_remaining):
-        available_positions = set(gmap.positions)
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
@@ -211,7 +209,7 @@ class PathPlanning:
         current = [ships[i].pos for i in range(n)]
         next_positions = [current[i] for i in range(n)]
         reservation_table = defaultdict(set)
-        scheduled = [False for i in range(n)]
+        scheduled = [False] * n
         dropoffs = {me.shipyard.pos}
         dropoffs.update({drp.pos for drp in me.get_dropoffs()})
 
@@ -221,8 +219,8 @@ class PathPlanning:
         for ship in other_ships:
             reservation_table[0].add(ship.pos)
             reservation_table[1].add(ship.pos)
-            for next in cardinal_neighbors(ship.pos):
-                reservation_table[1].add(next)
+            for neighbor in cardinal_neighbors(ship.pos):
+                reservation_table[1].add(neighbor)
 
         log('converting dropoffs')
         for i in range(n):
@@ -234,7 +232,8 @@ class PathPlanning:
 
         log('locking stills')
         for i in unscheduled:
-            if current[i] == goals[i] or gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO > ships[i].halite_amount:
+            if current[i] == goals[i] or gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO > ships[
+                i].halite_amount:
                 log(ships[i])
                 if current[i] not in dropoffs or turns_remaining - 1 > constants.WIDTH:
                     reservation_table[1].add(current[i])
@@ -259,7 +258,7 @@ class PathPlanning:
         return next_positions
 
     @staticmethod
-    def a_star(gmap, start, goal, starting_halite, reservation_table, WINDOW=8):
+    def a_star(gmap, start, goal, starting_halite, reservation_table, window=8):
         """windowed hierarchical cooperative a*"""
 
         start = normalize(start)
@@ -301,14 +300,14 @@ class PathPlanning:
             halite_left = halite_at[cpt]
 
             halite_on_ground = gmap[current].halite_amount
-            for pos, pt, amt in extractions_at[cpt]:
+            for pos, _, amt in extractions_at[cpt]:
                 if pos == current:
                     halite_on_ground -= amt
 
             if current == goal:
                 return PathPlanning._reconstruct_path(came_from, cpt)
 
-            # log('- Expanding {} at {}. f={}'.format(current_raw, t, f_score[current_raw]))
+            # log('- Expanding {} at {}. f={}'.format(current, t, f_score[current]))
 
             open_set.remove(cpt)
             closed_set.add(cpt)
@@ -325,7 +324,7 @@ class PathPlanning:
             for neighbor in neighbors:
                 npt = (neighbor, nt)
 
-                if npt in closed_set or (nt < WINDOW and neighbor in reservation_table[nt]):
+                if npt in closed_set or (nt < window and neighbor in reservation_table[nt]):
                     continue
 
                 cost = 0 if current == neighbor else move_cost
@@ -349,7 +348,7 @@ class PathPlanning:
                 else:
                     halite_at[npt] = halite_left - raw_move_cost
                     extractions_at[npt] = deepcopy(extractions_at[cpt])
-                # log('-- Adding {} at {}. h={} g={}'.format(neighbor_raw, nt, h_score[neighbor_raw], g_score[neighbor_raw]))
+                # log('-- Adding {} at {}. h={} g={}'.format(neighbor, nt, h_score[neighbor], g_score[neighbor]))
 
         if start in reservation_table[1]:
             for neighbor in cardinal_neighbors(start):
@@ -393,7 +392,7 @@ class Commander:
 
     def should_make_ship(self, me, gmap):
         roi = IncomeEstimation.roi(self.game, me, gmap)
-        return roi > 0 and len(me.get_ships()) < 50 and self.turns_remaining > 50
+        return roi > 0 and self.turns_remaining > 50
 
     def produce_commands(self, me, gmap):
         ships = list(me.get_ships())
