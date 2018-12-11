@@ -122,7 +122,7 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(me, gmap, ships, turns_remaining):
+    def goals_for_ships(me, gmap, ships, turns_remaining, dropoff_radius=8):
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
@@ -130,31 +130,11 @@ class ResourceAllocation:
         dropoffs = [me.shipyard.pos]
         dropoffs.extend([drp.pos for drp in me.get_dropoffs()])
 
-        log('allocating dropoffs')
-        halite = me.halite_amount
-        while halite > constants.DROPOFF_COST:
-            # TODO may have less than 4k halite, but still be able to create dropoff due to bonus
-            log('gathering potential dropoffs')
-            score_by_dropoff = {}
-            for i in range(n):
-                can, score = ResourceAllocation.can_convert_to_dropoff(me, gmap, ships[i], dropoffs)
-                if can:
-                    score_by_dropoff[i] = score
-
-            if len(score_by_dropoff) == 0:
-                break
-
-            log('choosing best dropoff')
-            i = max(score_by_dropoff, key=score_by_dropoff.get)
-            scheduled[i] = True
-            goals[i] = None
-            dropoffs.append(ships[i].pos)
-            halite -= constants.DROPOFF_COST - gmap[ships[i].pos].halite_amount - ships[i].halite_amount
-
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
-        log('building assignments')
+        planned_dropoffs = []
 
+        log('building assignments')
         hpt_by_assignment = {}
         for i in unscheduled:
             closest_dropoff = min(dropoffs, key=lambda drp: gmap.dist(ships[i].pos, drp))
@@ -192,27 +172,75 @@ class ResourceAllocation:
             if len(unscheduled) == 0:
                 break
 
-        return goals
+        log('gathering potential dropoffs')
+        score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(me, gmap, dropoffs, goals,
+                                                                                       dropoff_radius)
+        log(score_by_dropoff)
+        log(goals_by_dropoff)
+
+        if n > 10 and len(goals_by_dropoff) > 0 and max(goals_by_dropoff.values()) > 0:
+            planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
+            planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
+            for new_dropoff in planned_dropoffs:
+                log('dropoff position: {}'.format(new_dropoff))
+
+                i = min(range(n), key=lambda i: gmap.dist(ships[i].pos, new_dropoff))
+
+                log('chosen ship: {}'.format(ships[i]))
+                goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
+
+        return goals, planned_dropoffs
 
     @staticmethod
-    def can_convert_to_dropoff(me, gmap, ship, dropoffs, dropoff_radius=16):
-        if gmap[ship.pos].has_structure:
-            return False, 0
+    def get_potential_dropoffs(me, gmap, dropoffs, goals, dropoff_radius):
+        halite_by_pos = get_halite_by_position(gmap)
+
+        # get biggest halite positions as dropoffs
+        score_by_dropoff = {}
+        goals_by_dropoff = {}
+        for pos in sorted(halite_by_pos, key=halite_by_pos.get, reverse=True)[:constants.WIDTH]:
+            can, score, num_goals = ResourceAllocation.can_convert_to_dropoff(me, gmap, pos, dropoffs, goals,
+                                                                              dropoff_radius)
+            if can:
+                score_by_dropoff[pos] = score
+                goals_by_dropoff[pos] = num_goals
+
+        # only take the biggest dropoff when there are multiple nearby
+        winners = set()
+        for drp in score_by_dropoff:
+            conflicting_winners = {w for w in winners if gmap.dist(w, drp) < dropoff_radius}
+            if len(conflicting_winners) == 0:
+                winners.add(drp)
+            elif all([score_by_dropoff[drp] > score_by_dropoff[w] for w in conflicting_winners]):
+                winners -= conflicting_winners
+                winners.add(drp)
+
+        # select winners
+        score_by_dropoff = {drp: score_by_dropoff[drp] for drp in winners}
+        goals_by_dropoff = {drp: goals_by_dropoff[drp] for drp in winners}
+
+        return score_by_dropoff, goals_by_dropoff
+
+    @staticmethod
+    def can_convert_to_dropoff(me, gmap, pos, dropoffs, goals, dropoff_radius=16):
+        if gmap[pos].has_structure:
+            return False, 0, 0
 
         for drp in dropoffs:
-            if gmap.dist(ship.pos, drp) <= 2 * dropoff_radius:
-                return False, 0
+            if gmap.dist(pos, drp) <= 2 * dropoff_radius:
+                return False, 0, 0
 
-        # TODO check goals of ships, not current positions
-        halite_around = gmap[ship.pos].halite_amount
-        turtles_around = 0
-        for ps in iterate_by_radius(ship.pos, max_radius=dropoff_radius):
+        halite_around = 0
+        goals_around = 0
+        for ps in iterate_by_radius(pos, max_radius=dropoff_radius):
             for p in ps:
                 halite_around += gmap[p].halite_amount
                 if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
-                    turtles_around += 1
+                    halite_around += gmap[p].ship.halite_amount
+                if p in goals:
+                    goals_around += 1
 
-        return halite_around > 1.5 * constants.DROPOFF_COST and turtles_around > 2, halite_around
+        return halite_around > 10 * constants.DROPOFF_COST, halite_around, goals_around
 
 
 class PathPlanning:
@@ -249,7 +277,7 @@ class PathPlanning:
         for i in unscheduled:
             if current[i] == goals[i] or gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO > ships[
                 i].halite_amount:
-                log(ships[i])
+                # log(ships[i])
                 if current[i] not in dropoffs or turns_remaining - 1 > constants.WIDTH:
                     reservation_table[1].add(current[i])
                 scheduled[i] = True
@@ -260,9 +288,9 @@ class PathPlanning:
         log('planning paths')
 
         for q, i in enumerate(unscheduled):
-            log('ship {} ({}/{})...'.format(ships[i].id, q, total))
+            # log('ship {} ({}/{})...'.format(ships[i].id, q, total))
             path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservation_table)
-            log(path)
+            # log(path)
             for raw_pos, t in path:
                 if raw_pos not in dropoffs or turns_remaining - t > constants.HEIGHT:
                     reservation_table[t].add(raw_pos)
@@ -420,7 +448,7 @@ class Commander:
 
         log('sorted ships: {}'.format(ships))
 
-        goals = ResourceAllocation.goals_for_ships(me, gmap, ships, self.turns_remaining)
+        goals, planned_dropoffs = ResourceAllocation.goals_for_ships(me, gmap, ships, self.turns_remaining)
         log('allocated goals: {}'.format(goals))
 
         next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
@@ -432,12 +460,19 @@ class Commander:
             if next_positions[i] is not None:
                 commands.append(ships[i].move(direction_between(ships[i].pos, next_positions[i])))
             else:
-                commands.append(ships[i].make_dropoff())
-                halite_available -= constants.DROPOFF_COST - ships[i].halite_amount - gmap[
-                    ships[i].position].halite_amount
-                log('Making dropoff with {}'.format(ships[i]))
+                cost = constants.DROPOFF_COST - ships[i].halite_amount - gmap[ships[i].position].halite_amount
+                if halite_available > cost:
+                    commands.append(ships[i].make_dropoff())
+                    halite_available -= cost
+                    log('Making dropoff with {}'.format(ships[i]))
+                    planned_dropoffs.remove(ships[i].pos)
+                else:
+                    commands.append(ships[i].stay_still())
 
-        if self.can_make_ship(me, gmap, next_positions, halite_available) and self.should_make_ship(me, gmap):
+        num_dropoffs = len(planned_dropoffs)
+        if (num_dropoffs == 0 or halite_available > num_dropoffs * constants.DROPOFF_COST + constants.SHIP_COST) \
+                and self.can_make_ship(me, gmap, next_positions, halite_available) \
+                and self.should_make_ship(me, gmap):
             commands.append(me.shipyard.spawn())
             log('spawning')
 

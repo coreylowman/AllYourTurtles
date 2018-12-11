@@ -9,10 +9,19 @@ def extract_halite(line):
 
 delta_by_config = {}
 
-for opponents in [1, 3]:
-    for size in [32, 40, 48, 56, 64]:
+for opponents in [
+    1,
+    3
+]:
+    for size in [
+        32,
+        40,
+        48,
+        56,
+        64
+    ]:
         deltas = []
-        for i in range(10):
+        for i in range(5):
             output = subprocess.check_output(
                 'halite.exe -vvv --no-logs --width {} --height {} "python MyBot.py" {}'.format(
                     size, size, '"python MyBot_last.py" ' * opponents),
