@@ -79,6 +79,7 @@ class IncomeEstimation:
     @staticmethod
     def hpt_of(me, gmap, turns_remaining, ship, closest_dropoff, destination, halite_weight=4, time_weight=1):
         # TODO consider attacking opponent
+        # TODO discount on number of enemy forces in area vs mine
         turns_to_move = gmap.dist(ship.pos, destination)
         closest_dropoff_distance = gmap.dist(ship.pos, closest_dropoff)
         if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
@@ -89,7 +90,6 @@ class IncomeEstimation:
             amount_gained = 0
             turns_to_collect = 1
         else:
-            # TODO what about a large amount of halite?
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
             amount_can_gain = constants.MAX_HALITE - ship.halite_amount
@@ -102,6 +102,9 @@ class IncomeEstimation:
             total_turns = 1
 
         # TODO this multiplier makes halite have greater weight than time, maybe experiment with different kinds?
+        # TODO bonus for distance from dropoff based on total halite after collection / distance to dropoff
+        # TODO bonus for inspiration
+        # TODO linearly interpolate between distance to halite & distance to turn in based on how full you are
         return (halite_weight * amount_gained) / (total_turns * time_weight)
 
     @staticmethod
@@ -123,6 +126,8 @@ class IncomeEstimation:
 class ResourceAllocation:
     @staticmethod
     def goals_for_ships(me, gmap, ships, turns_remaining, dropoff_radius=8):
+        # TODO schedule nearest dropoff at end of game here instead of using HPT
+        # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
@@ -206,6 +211,7 @@ class ResourceAllocation:
                 goals_by_dropoff[pos] = num_goals
 
         # only take the biggest dropoff when there are multiple nearby
+        # TODO somehow this isn't removing all that are possible: seed=1544570230 https://halite.io/play/?game_id=3013659&replay_class=1&replay_name=replay-20181211-232226%2B0000-1544570230-40-40-3013659
         winners = set()
         for drp in score_by_dropoff:
             conflicting_winners = {w for w in winners if gmap.dist(w, drp) < dropoff_radius}
@@ -393,6 +399,7 @@ class PathPlanning:
                     extractions_at[npt] = deepcopy(extractions_at[cpt])
                 # log('-- Adding {} at {}. h={} g={}'.format(neighbor, nt, h_score[neighbor], g_score[neighbor]))
 
+        # TODO try removing opponent reservations... would rather crash into opponent than self
         if start in reservation_table[1]:
             for neighbor in cardinal_neighbors(start):
                 if neighbor not in reservation_table[1]:
@@ -434,6 +441,7 @@ class Commander:
         return have_enough_halite and not_occupied and not_occupied_next_turn
 
     def should_make_ship(self, me, gmap):
+        # TODO look at number of ships opponent has? want to match taht so we don't lose a battle
         roi = IncomeEstimation.roi(self.game, me, gmap)
         return roi > 0 and self.turns_remaining > 50
 
