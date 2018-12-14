@@ -10,6 +10,14 @@ import logging
 from collections import defaultdict
 import math
 
+DROPOFF_COST_MULTIPLIER = 0
+
+
+def set_constants(game):
+    global DROPOFF_COST_MULTIPLIER
+
+    DROPOFF_COST_MULTIPLIER = 5 if len(game.players) == 2 else 10
+
 
 def normalize(p):
     x, y = p
@@ -243,7 +251,7 @@ class ResourceAllocation:
                 if p in goals:
                     goals_around += 1
 
-        return halite_around > 7.5 * constants.DROPOFF_COST, halite_around, goals_around
+        return halite_around > DROPOFF_COST_MULTIPLIER * constants.DROPOFF_COST, halite_around, goals_around
 
 
 class PathPlanning:
@@ -416,6 +424,9 @@ class PathPlanning:
 class Commander:
     def __init__(self):
         self.game = hlt.Game()
+
+        set_constants(self.game)
+
         self.game.ready("AllYourTurtles")
         self.plan_by_ship = {}
         self.endgame = False
