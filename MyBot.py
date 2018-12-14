@@ -125,7 +125,7 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_ship, dropoff_dist_by_ship, turns_remaining,
+    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_ship, dropoff_dist_by_ship, turns_remaining, endgame,
                         dropoff_radius=8):
         # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
@@ -133,10 +133,8 @@ class ResourceAllocation:
         goals = [ships[i].pos for i in range(n)]
         scheduled = [False] * n
 
-        for i in range(n):
-            if turns_remaining <= constants.WIDTH:
-                goals[i] = dropoff_by_ship[ships[i]]
-                scheduled[i] = True
+        if endgame:
+            return [dropoff_by_ship[ships[i]] for i in range(n)], []
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
@@ -424,6 +422,7 @@ class Commander:
         self.game = hlt.Game()
         self.game.ready("AllYourTurtles")
         self.plan_by_ship = {}
+        self.endgame = False
 
     @property
     def turns_remaining(self):
@@ -455,6 +454,10 @@ class Commander:
         dropoff_dist_by_ship = {ship: gmap.dist(dropoff_by_ship[ship], ship.pos) for ship in me.get_ships()}
         ships = sorted(dropoff_dist_by_ship, key=lambda ship: (dropoff_dist_by_ship[ship], ship.halite_amount, ship.id))
 
+        if not self.endgame:
+            turns_remaining = self.turns_remaining
+            self.endgame = any(dropoff_dist_by_ship[ship] >= turns_remaining for ship in ships)
+
         other_ships = []
         for oid in self.game.others:
             other_ships.extend(self.game.players[oid].get_ships())
@@ -462,7 +465,8 @@ class Commander:
         log('sorted ships: {}'.format(ships))
 
         goals, planned_dropoffs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_ship,
-                                                                     dropoff_dist_by_ship, self.turns_remaining)
+                                                                     dropoff_dist_by_ship, self.turns_remaining,
+                                                                     self.endgame)
         log('allocated goals: {}'.format(goals))
 
         next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
