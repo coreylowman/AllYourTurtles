@@ -77,35 +77,32 @@ def log(s):
 
 class IncomeEstimation:
     @staticmethod
-    def hpt_of(me, gmap, turns_remaining, ship, closest_dropoff, destination, halite_weight=4, time_weight=1):
+    def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then,
+               halite_weight=4, time_weight=1):
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
         turns_to_move = gmap.dist(ship.pos, destination)
-        closest_dropoff_distance = gmap.dist(ship.pos, closest_dropoff)
         if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
             # TODO also add in value indicating hpt of creating a new ship
             amount_gained = ship.halite_amount
-            turns_to_collect = 0
-        elif turns_remaining < closest_dropoff_distance * 2:
-            amount_gained = 0
-            turns_to_collect = 1
-        else:
-            # TODO take into account movement cost?
-            # TODO consider the HPT of attacking an enemy ship
-            amount_can_gain = constants.MAX_HALITE - ship.halite_amount
-            raw_amount_extracted = gmap[destination].halite_amount
-            amount_gained = min(amount_can_gain, raw_amount_extracted)
-            turns_to_collect = 1
+            return (halite_weight / time_weight) * amount_gained / (turns_to_move + 1)
 
-        total_turns = turns_to_move + turns_to_collect
-        if total_turns == 0:
-            total_turns = 1
+        turns_to_dropoff = gmap.dist(ship.pos, closest_dropoff_then)
+        if turns_to_dropoff > turns_remaining:
+            return 0
+
+        # TODO take into account movement cost?
+        # TODO consider the HPT of attacking an enemy ship
+        amount_can_gain = constants.MAX_HALITE - ship.halite_amount
+        amount_extracted = gmap[destination].halite_amount
+        amount_gained = min(amount_can_gain, amount_extracted)
+        collect_hpt = amount_gained / (turns_to_move + 1)
+
+        dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
         # TODO this multiplier makes halite have greater weight than time, maybe experiment with different kinds?
-        # TODO bonus for distance from dropoff based on total halite after collection / distance to dropoff
         # TODO bonus for inspiration
-        # TODO linearly interpolate between distance to halite & distance to turn in based on how full you are
-        return (halite_weight * amount_gained) / (total_turns * time_weight)
+        return (halite_weight / time_weight) * collect_hpt + dropoff_bonus
 
     @staticmethod
     def roi(game, me, gmap):
@@ -143,10 +140,8 @@ class ResourceAllocation:
         log('building assignments')
         hpt_by_assignment = {}
         for i in unscheduled:
-            closest_dropoff = dropoff_by_ship[ships[i]]
-
             for p in dropoffs:
-                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, p)
+                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], p, p)
                 hpt_by_assignment[(p, i)] = hpt
 
             # TODO don't assign to a position nearby with an enemy ship on it
@@ -156,7 +151,9 @@ class ResourceAllocation:
                     continue
 
                 best = max(ps, key=gmap.halite_at)
-                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, best)
+                closest_dropoff_then = min(dropoffs, key=lambda drp: gmap.dist(best, drp))
+                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], best,
+                                              closest_dropoff_then)
                 hpt_by_assignment[(best, i)] = hpt
 
         log('sorting assignments')
@@ -246,7 +243,7 @@ class ResourceAllocation:
                 if p in goals:
                     goals_around += 1
 
-        return halite_around > 10 * constants.DROPOFF_COST, halite_around, goals_around
+        return halite_around > 7.5 * constants.DROPOFF_COST, halite_around, goals_around
 
 
 class PathPlanning:
@@ -451,7 +448,8 @@ class Commander:
         dropoff_by_ship = {ship: min(dropoffs, key=lambda drp: gmap.dist(drp, ship.pos)) for ship in
                            me.get_ships()}
         dropoff_dist_by_ship = {ship: gmap.dist(dropoff_by_ship[ship], ship.pos) for ship in me.get_ships()}
-        ships = sorted(dropoff_dist_by_ship, key=lambda ship: (dropoff_dist_by_ship[ship], -ship.halite_amount, ship.id))
+        ships = sorted(dropoff_dist_by_ship,
+                       key=lambda ship: (dropoff_dist_by_ship[ship], -ship.halite_amount, ship.id))
 
         if not self.endgame:
             turns_remaining = self.turns_remaining
