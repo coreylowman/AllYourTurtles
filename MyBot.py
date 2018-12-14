@@ -452,7 +452,7 @@ class Commander:
         dropoff_by_ship = {ship: min(dropoffs, key=lambda drp: gmap.dist(drp, ship.pos)) for ship in
                            me.get_ships()}
         dropoff_dist_by_ship = {ship: gmap.dist(dropoff_by_ship[ship], ship.pos) for ship in me.get_ships()}
-        ships = sorted(dropoff_dist_by_ship, key=lambda ship: (dropoff_dist_by_ship[ship], ship.halite_amount, ship.id))
+        ships = sorted(dropoff_dist_by_ship, key=lambda ship: (dropoff_dist_by_ship[ship], -ship.halite_amount, ship.id))
 
         if not self.endgame:
             turns_remaining = self.turns_remaining
