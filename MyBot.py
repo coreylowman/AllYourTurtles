@@ -446,9 +446,10 @@ class Commander:
         return roi > 0 and self.turns_remaining > 50
 
     def produce_commands(self, me, gmap):
-        ships = list(me.get_ships())
-        ships = sorted(ships, key=lambda s: gmap.dist(s.pos, me.shipyard.pos), reverse=True)
-        ships = sorted(ships, key=lambda s: s.halite_amount, reverse=True)
+        dropoffs = [me.shipyard.pos] + [drp.pos for drp in me.get_dropoffs()]
+        dropoff_dist_by_ship = {ship: min(map(lambda drp: gmap.dist(drp, ship.pos), dropoffs)) for ship in
+                                me.get_ships()}
+        ships = sorted(dropoff_dist_by_ship, key=dropoff_dist_by_ship.get)
 
         other_ships = []
         for oid in self.game.others:
