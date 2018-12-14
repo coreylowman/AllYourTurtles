@@ -212,10 +212,9 @@ class ResourceAllocation:
                 goals_by_dropoff[pos] = num_goals
 
         # only take the biggest dropoff when there are multiple nearby
-        # TODO somehow this isn't removing all that are possible: seed=1544570230 https://halite.io/play/?game_id=3013659&replay_class=1&replay_name=replay-20181211-232226%2B0000-1544570230-40-40-3013659
         winners = set()
         for drp in score_by_dropoff:
-            conflicting_winners = {w for w in winners if gmap.dist(w, drp) < dropoff_radius}
+            conflicting_winners = {w for w in winners if gmap.dist(w, drp) < 2 * dropoff_radius}
             if len(conflicting_winners) == 0:
                 winners.add(drp)
             elif all([score_by_dropoff[drp] > score_by_dropoff[w] for w in conflicting_winners]):
@@ -229,7 +228,7 @@ class ResourceAllocation:
         return score_by_dropoff, goals_by_dropoff
 
     @staticmethod
-    def can_convert_to_dropoff(me, gmap, pos, dropoffs, goals, dropoff_radius=16):
+    def can_convert_to_dropoff(me, gmap, pos, dropoffs, goals, dropoff_radius):
         if gmap[pos].has_structure:
             return False, 0, 0
 
