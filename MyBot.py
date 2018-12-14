@@ -125,15 +125,18 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(me, gmap, ships, turns_remaining, dropoff_radius=8):
-        # TODO schedule nearest dropoff at end of game here instead of using HPT
+    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_ship, dropoff_dist_by_ship, turns_remaining,
+                        dropoff_radius=8):
         # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
-        scheduled = [False for i in range(n)]
-        dropoffs = [me.shipyard.pos]
-        dropoffs.extend([drp.pos for drp in me.get_dropoffs()])
+        scheduled = [False] * n
+
+        for i in range(n):
+            if turns_remaining <= constants.WIDTH:
+                goals[i] = dropoff_by_ship[ships[i]]
+                scheduled[i] = True
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
@@ -142,7 +145,7 @@ class ResourceAllocation:
         log('building assignments')
         hpt_by_assignment = {}
         for i in unscheduled:
-            closest_dropoff = min(dropoffs, key=lambda drp: gmap.dist(ships[i].pos, drp))
+            closest_dropoff = dropoff_by_ship[ships[i]]
 
             for p in dropoffs:
                 hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], closest_dropoff, p)
@@ -447,9 +450,10 @@ class Commander:
 
     def produce_commands(self, me, gmap):
         dropoffs = [me.shipyard.pos] + [drp.pos for drp in me.get_dropoffs()]
-        dropoff_dist_by_ship = {ship: min(map(lambda drp: gmap.dist(drp, ship.pos), dropoffs)) for ship in
-                                me.get_ships()}
-        ships = sorted(dropoff_dist_by_ship, key=dropoff_dist_by_ship.get)
+        dropoff_by_ship = {ship: min(dropoffs, key=lambda drp: gmap.dist(drp, ship.pos)) for ship in
+                           me.get_ships()}
+        dropoff_dist_by_ship = {ship: gmap.dist(dropoff_by_ship[ship], ship.pos) for ship in me.get_ships()}
+        ships = sorted(dropoff_dist_by_ship, key=lambda ship: (dropoff_dist_by_ship[ship], ship.halite_amount, ship.id))
 
         other_ships = []
         for oid in self.game.others:
@@ -457,7 +461,8 @@ class Commander:
 
         log('sorted ships: {}'.format(ships))
 
-        goals, planned_dropoffs = ResourceAllocation.goals_for_ships(me, gmap, ships, self.turns_remaining)
+        goals, planned_dropoffs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_ship,
+                                                                     dropoff_dist_by_ship, self.turns_remaining)
         log('allocated goals: {}'.format(goals))
 
         next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
