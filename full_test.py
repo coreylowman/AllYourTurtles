@@ -13,13 +13,13 @@ for opponents in [
     1,
     3
 ]:
-    for size in [
+    for size in reversed([
         32,
         40,
         48,
         56,
         64
-    ]:
+    ]):
         deltas = []
         for i in range(5):
             output = subprocess.check_output(
@@ -33,8 +33,14 @@ for opponents in [
             if '[error]' in output:
                 raise ValueError(output)
 
+            # print(output)
+            lines = output.splitlines()
+            for i, line in enumerate(lines):
+                if line.startswith('[info] Opening a file at'):
+                    break
+
             players = opponents + 1
-            results = output.splitlines()[-2 * players: -1 * players]
+            results = lines[i + 1:i + 1 + players]
             halite = extract_halite(results[0])
             opponents_halite = mean(list(map(extract_halite, results[1:])))
             deltas.append(halite - opponents_halite)
