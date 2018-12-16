@@ -62,15 +62,25 @@ def iterate_by_radius(p, max_radius=math.inf):
         r += 1
 
 
+def pos_around(p, radius):
+    positions = set()
+    for y in range(radius):
+        for x in range(radius - y):
+            positions.add(normalize((p[0] + x, p[1] + y)))
+            positions.add(normalize((p[0] - x, p[1] + y)))
+            positions.add(normalize((p[0] - x, p[1] - y)))
+            positions.add(normalize((p[0] + x, p[1] - y)))
+    return positions
+
+
 def ships_around(gmap, p, owner, max_radius):
     ships, other_ships = 0, 0
-    for ps in iterate_by_radius(p, max_radius=max_radius):
-        for p in ps:
-            if gmap[p].is_occupied:
-                if gmap[p].ship.owner == owner:
-                    ships += 1
-                else:
-                    other_ships += 1
+    for p in pos_around(p, max_radius):
+        if gmap[p].is_occupied:
+            if gmap[p].ship.owner == owner:
+                ships += 1
+            else:
+                other_ships += 1
     return ships, other_ships
 
 
@@ -85,32 +95,31 @@ def log(s):
 
 class IncomeEstimation:
     @staticmethod
-    def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then,
-               halite_weight=4, time_weight=1):
+    def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then, halite_weight=4):
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
-        turns_to_move = gmap.dist(ship.pos, destination)
-        if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
-            # TODO also add in value indicating hpt of creating a new ship
-            amount_gained = ship.halite_amount
-            return (halite_weight / time_weight) * amount_gained / (turns_to_move + 1)
+        turns_to_move = gmap.dist(ship.pos, destination) + 1
+        turns_to_dropoff = gmap.dist(destination, closest_dropoff_then) + 1
 
-        turns_to_dropoff = gmap.dist(ship.pos, closest_dropoff_then)
         if turns_to_dropoff > turns_remaining:
             return 0
 
-        # TODO take into account movement cost?
-        # TODO consider the HPT of attacking an enemy ship
-        amount_can_gain = constants.MAX_HALITE - ship.halite_amount
-        amount_extracted = gmap[destination].halite_amount
-        amount_gained = min(amount_can_gain, amount_extracted)
-        collect_hpt = amount_gained / (turns_to_move + 1)
+        if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
+            # TODO also add in value indicating hpt of creating a new ship
+            amount_gained = ship.halite_amount
+        else:
+            # TODO take into account movement cost?
+            # TODO consider the HPT of attacking an enemy ship
+            amount_can_gain = constants.MAX_HALITE - ship.halite_amount
+            amount_extracted = gmap[destination].halite_amount
+            amount_gained = min(amount_can_gain, amount_extracted)
 
-        dropoff_bonus = 1 / (turns_to_dropoff + 1)
+        collect_hpt = amount_gained / turns_to_move
+        dropoff_bonus = 1 / turns_to_dropoff
 
         # TODO this multiplier makes halite have greater weight than time, maybe experiment with different kinds?
         # TODO bonus for inspiration
-        return (halite_weight / time_weight) * collect_hpt + dropoff_bonus
+        return halite_weight * collect_hpt + dropoff_bonus
 
     @staticmethod
     def roi(game, me, gmap):
@@ -189,7 +198,7 @@ class ResourceAllocation:
         log(score_by_dropoff)
         log(goals_by_dropoff)
 
-        if n > 10 and len(goals_by_dropoff) > 0 and max(goals_by_dropoff.values()) > 0:
+        if n > 10:
             planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
             planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
             for new_dropoff in planned_dropoffs:
@@ -241,15 +250,15 @@ class ResourceAllocation:
             if gmap.dist(pos, drp) <= 2 * dropoff_radius:
                 return False, 0, 0
 
-        halite_around = 0
+        # give bonus for the halite on the dropoff
+        halite_around = gmap[pos].halite_amount
         goals_around = 0
-        for ps in iterate_by_radius(pos, max_radius=dropoff_radius):
-            for p in ps:
-                halite_around += gmap[p].halite_amount
-                if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
-                    halite_around += gmap[p].ship.halite_amount
-                if p in goals:
-                    goals_around += 1
+        for p in pos_around(pos, dropoff_radius):
+            halite_around += gmap[p].halite_amount
+            if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
+                halite_around += gmap[p].ship.halite_amount
+            if p in goals:
+                goals_around += 1
 
         return halite_around > DROPOFF_COST_MULTIPLIER * constants.DROPOFF_COST, halite_around, goals_around
 
@@ -268,52 +277,53 @@ class PathPlanning:
 
         log('reserving other ship positions')
 
+        def add_reservation(pos, time, is_own):
+            # if not a dropoff, just add
+            # if is a dropoff, add if enemy is reserving or if not endgame
+            if pos not in dropoffs or not is_own or turns_remaining - time > constants.WIDTH:
+                reservations_all[time].add(pos)
+                if is_own:
+                    reservations_self[time].add(pos)
+
         for opponent in other_ships:
-            reservations_all[0].add(opponent.pos)
+            add_reservation(opponent.pos, 0, is_own=False)
             my_ships, other_ships = ships_around(gmap, opponent.pos, me.id, max_radius=8)
             if my_ships < other_ships:
-                reservations_all[1].add(opponent.pos)
+                add_reservation(opponent.pos, 1, is_own=False)
                 for neighbor in cardinal_neighbors(opponent.pos):
-                    reservations_all[1].add(neighbor)
+                    add_reservation(neighbor, 1, is_own=False)
 
         log('converting dropoffs')
         for i in range(n):
             if goals[i] is None:
                 scheduled[i] = True
                 next_positions[i] = None
+                add_reservation(current[i], 1, is_own=True)
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
         log('locking stills')
         for i in unscheduled:
-            if current[i] == goals[i] or gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO > ships[
-                i].halite_amount:
-                # log(ships[i])
-                if current[i] not in dropoffs or turns_remaining - 1 > constants.WIDTH:
-                    reservations_all[1].add(current[i])
-                    reservations_self[1].add(current[i])
+            cost = gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO
+            if current[i] == goals[i] or cost > ships[i].halite_amount:
+                add_reservation(current[i], 1, is_own=True)
                 scheduled[i] = True
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
-        total = len(unscheduled)
 
         log('planning paths')
 
         for q, i in enumerate(unscheduled):
-            # log('ship {} ({}/{})...'.format(ships[i].id, q, total))
             path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_all)
             if path is None:
                 path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_self)
                 if path is None:
                     path = [(current[i], 0), (current[i], 1)]
 
-            # log(path)
             for raw_pos, t in path:
                 if raw_pos not in dropoffs or turns_remaining - t > constants.HEIGHT:
-                    reservations_all[t].add(raw_pos)
-                    reservations_self[t].add(raw_pos)
+                    add_reservation(raw_pos, t, is_own=True)
             next_positions[i] = path[1][0]
-
         log('paths planned')
 
         return next_positions
@@ -348,14 +358,14 @@ class PathPlanning:
         extractions_at = defaultdict(list)
 
         open_set.add((start, 0))
-        g_score[start] = 0
-        h_score[start] = heuristic(start)
-        f_score[start] = g_score[start] + h_score[start]
+        g_score[(start, 0)] = 0
+        h_score[(start, 0)] = heuristic(start)
+        f_score[(start, 0)] = g_score[(start, 0)] + h_score[(start, 0)]
         halite_at[(start, 0)] = starting_halite
         extractions_at[(start, 0)] = []
 
         while len(open_set) > 0:
-            cpt = min(open_set, key=lambda pt: f_score[pt[0]])
+            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt]))
             current, t = cpt
 
             halite_left = halite_at[cpt]
@@ -390,17 +400,17 @@ class PathPlanning:
 
                 cost = 0 if current == neighbor else move_cost
                 dist = cost + 1
-                g = g_score[current] + dist
+                g = g_score[cpt] + dist
 
                 if npt not in open_set:
                     open_set.add(npt)
-                elif g >= g_score[neighbor]:
+                elif g >= g_score[npt]:
                     continue
 
                 came_from[npt] = cpt
-                g_score[neighbor] = g
-                h_score[neighbor] = heuristic(neighbor)
-                f_score[neighbor] = g_score[neighbor] + h_score[neighbor]
+                g_score[npt] = g
+                h_score[npt] = heuristic(neighbor)
+                f_score[npt] = g_score[npt] + h_score[npt]
 
                 if current == neighbor:
                     extracted = raw_extracted
