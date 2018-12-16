@@ -260,21 +260,21 @@ class PathPlanning:
         n = len(ships)
         current = [ships[i].pos for i in range(n)]
         next_positions = [current[i] for i in range(n)]
-        reservation_table = defaultdict(set)
+        reservations_all = defaultdict(set)
+        reservations_self = defaultdict(set)
         scheduled = [False] * n
         dropoffs = {me.shipyard.pos}
         dropoffs.update({drp.pos for drp in me.get_dropoffs()})
 
         log('reserving other ship positions')
 
-        for ship in other_ships:
-            reservation_table[0].add(ship.pos)
-
-            my_ships, other_ships = ships_around(gmap, ship.pos, me.id, max_radius=8)
+        for opponent in other_ships:
+            reservations_all[0].add(opponent.pos)
+            my_ships, other_ships = ships_around(gmap, opponent.pos, me.id, max_radius=8)
             if my_ships < other_ships:
-                reservation_table[1].add(ship.pos)
-                for neighbor in cardinal_neighbors(ship.pos):
-                    reservation_table[1].add(neighbor)
+                reservations_all[1].add(opponent.pos)
+                for neighbor in cardinal_neighbors(opponent.pos):
+                    reservations_all[1].add(neighbor)
 
         log('converting dropoffs')
         for i in range(n):
@@ -290,7 +290,8 @@ class PathPlanning:
                 i].halite_amount:
                 # log(ships[i])
                 if current[i] not in dropoffs or turns_remaining - 1 > constants.WIDTH:
-                    reservation_table[1].add(current[i])
+                    reservations_all[1].add(current[i])
+                    reservations_self[1].add(current[i])
                 scheduled[i] = True
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
@@ -300,11 +301,17 @@ class PathPlanning:
 
         for q, i in enumerate(unscheduled):
             # log('ship {} ({}/{})...'.format(ships[i].id, q, total))
-            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservation_table)
+            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_all)
+            if path is None:
+                path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_self)
+                if path is None:
+                    path = [(current[i], 0), (current[i], 1)]
+
             # log(path)
             for raw_pos, t in path:
                 if raw_pos not in dropoffs or turns_remaining - t > constants.HEIGHT:
-                    reservation_table[t].add(raw_pos)
+                    reservations_all[t].add(raw_pos)
+                    reservations_self[t].add(raw_pos)
             next_positions[i] = path[1][0]
 
         log('paths planned')
@@ -403,14 +410,6 @@ class PathPlanning:
                     halite_at[npt] = halite_left - raw_move_cost
                     extractions_at[npt] = deepcopy(extractions_at[cpt])
                 # log('-- Adding {} at {}. h={} g={}'.format(neighbor, nt, h_score[neighbor], g_score[neighbor]))
-
-        # TODO try removing opponent reservations... would rather crash into opponent than self
-        if start in reservation_table[1]:
-            for neighbor in cardinal_neighbors(start):
-                if neighbor not in reservation_table[1]:
-                    return [(start, 0), (neighbor, 1)]
-
-        return [(start, 0), (start, 1)]
 
     @staticmethod
     def _reconstruct_path(prev_by_node, current):
