@@ -458,10 +458,11 @@ class Commander:
         not_occupied_next_turn = me.shipyard.pos not in filter(None, next_positions)
         return have_enough_halite and not_occupied and not_occupied_next_turn
 
-    def should_make_ship(self, me, gmap):
-        # TODO look at number of ships opponent has? want to match taht so we don't lose a battle
-        roi = IncomeEstimation.roi(self.game, me, gmap)
-        return roi > 0 and self.turns_remaining > 50
+    def should_make_ship(self, me):
+        my_ships = len(me.ships_produced)
+        other_ships = [len(self.game.players[other].ships_produced) for other in self.game.others]
+        other_avg = math.ceil(sum(other_ships) / len(other_ships))
+        return not self.endgame and my_ships <= other_avg
 
     def produce_commands(self, me, gmap):
         dropoffs = [me.shipyard.pos] + [drp.pos for drp in me.get_dropoffs()]
@@ -507,7 +508,7 @@ class Commander:
         num_dropoffs = len(planned_dropoffs)
         if (num_dropoffs == 0 or halite_available > num_dropoffs * constants.DROPOFF_COST + constants.SHIP_COST) \
                 and self.can_make_ship(me, gmap, next_positions, halite_available) \
-                and self.should_make_ship(me, gmap):
+                and self.should_make_ship(me):
             commands.append(me.shipyard.spawn())
             log('spawning')
 
