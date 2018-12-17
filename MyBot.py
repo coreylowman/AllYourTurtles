@@ -16,7 +16,7 @@ DROPOFF_COST_MULTIPLIER = 0
 def set_constants(game):
     global DROPOFF_COST_MULTIPLIER
 
-    DROPOFF_COST_MULTIPLIER = 5 if len(game.players) == 2 else 10
+    DROPOFF_COST_MULTIPLIER = 5 if len(game.players) == 2 else 5
 
 
 def normalize(p):
