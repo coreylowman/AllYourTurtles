@@ -265,7 +265,7 @@ class ResourceAllocation:
 
 class PathPlanning:
     @staticmethod
-    def next_positions_for(me, gmap, ships, other_ships, turns_remaining, goals):
+    def next_positions_for(me, gmap, ships, other_ships, turns_remaining, goals, spawning):
         n = len(ships)
         current = [ships[i].pos for i in range(n)]
         next_positions = [current[i] for i in range(n)]
@@ -284,6 +284,9 @@ class PathPlanning:
                 reservations_all[time].add(pos)
                 if is_own:
                     reservations_self[time].add(pos)
+
+        if spawning:
+            add_reservation(me.shipyard.pos, 1, is_own=True)
 
         for opponent in other_ships:
             add_reservation(opponent.pos, 0, is_own=False)
@@ -452,12 +455,6 @@ class Commander:
         self.game.end_turn(queue)
         log('Turn took {}'.format(datetime.now() - start_time))
 
-    def can_make_ship(self, me, gmap, next_positions, halite_left):
-        have_enough_halite = halite_left >= constants.SHIP_COST
-        not_occupied = not gmap[me.shipyard].is_occupied
-        not_occupied_next_turn = me.shipyard.pos not in filter(None, next_positions)
-        return have_enough_halite and not_occupied and not_occupied_next_turn
-
     def should_make_ship(self, me):
         my_ships = len(me.ships_produced)
         other_ships = [len(self.game.players[other].ships_produced) for other in self.game.others]
@@ -480,6 +477,15 @@ class Commander:
         for oid in self.game.others:
             other_ships.extend(self.game.players[oid].get_ships())
 
+        commands = []
+        halite_available = me.halite_amount
+        spawning = False
+        if halite_available >= constants.SHIP_COST and self.should_make_ship(me):
+            commands.append(me.shipyard.spawn())
+            halite_available -= constants.SHIP_COST
+            spawning = True
+            log('spawning')
+
         log('sorted ships: {}'.format(ships))
 
         goals, planned_dropoffs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_ship,
@@ -487,30 +493,22 @@ class Commander:
                                                                      self.endgame)
         log('allocated goals: {}'.format(goals))
 
-        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals)
+        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals,
+                                                         spawning)
         log('planned paths: {}'.format(next_positions))
 
-        halite_available = me.halite_amount
-        commands = []
         for i in range(len(ships)):
             if next_positions[i] is not None:
                 commands.append(ships[i].move(direction_between(ships[i].pos, next_positions[i])))
             else:
                 cost = constants.DROPOFF_COST - ships[i].halite_amount - gmap[ships[i].position].halite_amount
-                if halite_available > cost:
+                if halite_available >= cost:
                     commands.append(ships[i].make_dropoff())
                     halite_available -= cost
                     log('Making dropoff with {}'.format(ships[i]))
                     planned_dropoffs.remove(ships[i].pos)
                 else:
                     commands.append(ships[i].stay_still())
-
-        num_dropoffs = len(planned_dropoffs)
-        if (num_dropoffs == 0 or halite_available > num_dropoffs * constants.DROPOFF_COST + constants.SHIP_COST) \
-                and self.can_make_ship(me, gmap, next_positions, halite_available) \
-                and self.should_make_ship(me):
-            commands.append(me.shipyard.spawn())
-            log('spawning')
 
         return commands
 
