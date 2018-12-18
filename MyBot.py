@@ -11,12 +11,18 @@ from collections import defaultdict
 import math
 
 DROPOFF_COST_MULTIPLIER = 0
+VISION_BY_POS = {}
 
 
 def set_constants(game):
-    global DROPOFF_COST_MULTIPLIER
+    global DROPOFF_COST_MULTIPLIER, VISION_BY_POS
 
     DROPOFF_COST_MULTIPLIER = 5 if len(game.players) == 2 else 5
+
+    vision = min(constants.WIDTH, 48)
+    vision //= 2
+    for pos in game.game_map.positions:
+        VISION_BY_POS[pos] = pos_around(pos, vision)
 
 
 def normalize(p):
@@ -82,6 +88,17 @@ def ships_around(gmap, p, owner, max_radius):
             else:
                 other_ships += 1
     return ships, other_ships
+
+
+def centroid(positions):
+    total = [0, 0]
+    for p in positions:
+        np = normalize(p)
+        total[0] += np[0]
+        total[1] += np[1]
+    total[0] /= len(positions)
+    total[1] /= len(positions)
+    return round(total[0]), round(total[1])
 
 
 def get_halite_by_position(gmap):
@@ -164,7 +181,7 @@ class ResourceAllocation:
         hpt_by_assignment = {}
         for i in unscheduled:
             # TODO don't assign to a position nearby with an enemy ship on it
-            for p in gmap.positions:
+            for p in VISION_BY_POS[ships[i].pos]:
                 hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], p, dropoff_by_pos[p],
                                               ships_by_pos[p] >= constants.INSPIRATION_SHIP_COUNT)
                 hpt_by_assignment[(p, i)] = hpt
@@ -195,18 +212,22 @@ class ResourceAllocation:
         log(goals_by_dropoff)
 
         planned_dropoffs = []
+        costs = []
+        ships_for_dropoffs = set(range(n))
         if n > 10:
             planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
             planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
             for new_dropoff in planned_dropoffs:
                 log('dropoff position: {}'.format(new_dropoff))
 
-                i = min(range(n), key=lambda i: gmap.dist(ships[i].pos, new_dropoff))
+                i = min(ships_for_dropoffs, key=lambda i: gmap.dist(ships[i].pos, new_dropoff))
+                ships_for_dropoffs.remove(i)
+                costs.append(constants.DROPOFF_COST - ships[i].halite_amount - gmap[new_dropoff].halite_amount)
 
                 log('chosen ship: {}'.format(ships[i]))
                 goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
 
-        return goals, planned_dropoffs
+        return goals, planned_dropoffs, costs
 
     @staticmethod
     def get_potential_dropoffs(me, gmap, dropoffs, goals, dropoff_radius):
@@ -515,22 +536,22 @@ class Commander:
         for opponent_ship in other_ships:
             self.opponent_model.update(gmap, opponent_ship)
 
-        # TODO dropoffs before spawn?
-
         commands = []
+
+        log('sorted ships: {}'.format(ships))
+
+        goals, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos,
+                                                                            self.turns_remaining, self.endgame)
+        log('allocated goals: {}'.format(goals))
+
         halite_available = me.halite_amount
         spawning = False
-        if halite_available >= constants.SHIP_COST and self.should_make_ship(me):
+        if halite_available >= constants.SHIP_COST and halite_available - sum(
+                costs) >= constants.SHIP_COST and self.should_make_ship(me):
             commands.append(me.shipyard.spawn())
             halite_available -= constants.SHIP_COST
             spawning = True
             log('spawning')
-
-        log('sorted ships: {}'.format(ships))
-
-        goals, planned_dropoffs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos,
-                                                                     self.turns_remaining, self.endgame)
-        log('allocated goals: {}'.format(goals))
 
         next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.opponent_model,
                                                          self.turns_remaining, goals, spawning)
