@@ -262,7 +262,7 @@ class ResourceAllocation:
 
 class PathPlanning:
     @staticmethod
-    def next_positions_for(me, gmap, ships, other_ships, turns_remaining, goals, spawning):
+    def next_positions_for(me, gmap, ships, opponent_ships, opponent_model, turns_remaining, goals, spawning):
         n = len(ships)
         current = [ships[i].pos for i in range(n)]
         next_positions = [current[i] for i in range(n)]
@@ -285,14 +285,13 @@ class PathPlanning:
         if spawning:
             add_reservation(me.shipyard.pos, 1, is_own=True)
 
-        for opponent in other_ships:
-            add_reservation(opponent.pos, 0, is_own=False)
-            my_ships, other_ships = ships_around(gmap, opponent.pos, me.id, max_radius=8)
-            # TODO make this leq... don't want to collide if we are equal
-            if my_ships < other_ships:
-                add_reservation(opponent.pos, 1, is_own=False)
-                for neighbor in cardinal_neighbors(opponent.pos):
-                    add_reservation(neighbor, 1, is_own=False)
+        for opponent_ship in opponent_ships:
+            add_reservation(opponent_ship.pos, 0, is_own=False)
+            my_ships, opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
+            # TODO leq instead of le?
+            if my_ships < opponent_ships:
+                for next_pos in opponent_model.get_next_positions_for(opponent_ship):
+                    add_reservation(next_pos, 1, is_own=False)
 
         log('converting dropoffs')
         for i in range(n):
@@ -431,6 +430,42 @@ class PathPlanning:
         return list(reversed(total_path))
 
 
+class OpponentModel:
+    def __init__(self, n=3):
+        self._n = n
+        self._pos_by_ship = {}
+        self._moves_by_ship = {}
+        self._predicted_by_ship = {}
+
+        self.correct = 0
+        self.total = 0
+
+    def get_next_positions_for(self, ship):
+        return self._predicted_by_ship[ship]
+
+    def update(self, gmap, ship):
+        if ship not in self._pos_by_ship:
+            self._moves_by_ship[ship] = [(0, 0)]
+        else:
+            if ship.pos in self._predicted_by_ship[ship]:
+                self.correct += 1
+            self.total += 1
+
+            move = direction_between(ship.pos, self._pos_by_ship[ship])
+            self._moves_by_ship[ship].append(move)
+            self._moves_by_ship[ship] = self._moves_by_ship[ship][-self._n:]
+
+        self._pos_by_ship[ship] = tuple(ship.pos)
+
+        if ship.halite_amount < gmap[ship.pos].halite_amount / constants.MOVE_COST_RATIO:
+            predicted_moves = {(0, 0)}
+        # elif len(set(self._moves_by_ship[ship])) == 1:
+        #     predicted_moves = {self._moves_by_ship[ship][0]}
+        else:
+            predicted_moves = set(constants.CARDINAL_DIRECTIONS + [(0, 0)])
+        self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
+
+
 class Commander:
     def __init__(self):
         self.game = hlt.Game()
@@ -440,6 +475,8 @@ class Commander:
         self.game.ready("AllYourTurtles")
         self.plan_by_ship = {}
         self.endgame = False
+
+        self.opponent_model = OpponentModel()
 
     @property
     def turns_remaining(self):
@@ -475,6 +512,11 @@ class Commander:
         for oid in self.game.others:
             other_ships.extend(self.game.players[oid].get_ships())
 
+        for opponent_ship in other_ships:
+            self.opponent_model.update(gmap, opponent_ship)
+
+        # TODO dropoffs before spawn?
+
         commands = []
         halite_available = me.halite_amount
         spawning = False
@@ -490,8 +532,8 @@ class Commander:
                                                                      self.turns_remaining, self.endgame)
         log('allocated goals: {}'.format(goals))
 
-        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.turns_remaining, goals,
-                                                         spawning)
+        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.opponent_model,
+                                                         self.turns_remaining, goals, spawning)
         log('planned paths: {}'.format(next_positions))
 
         for i in range(len(ships)):
