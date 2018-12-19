@@ -90,7 +90,7 @@ def ships_around(gmap, p, owner, max_radius):
     return ships, other_ships
 
 
-def centroid(positions):
+def centroid(gmap, positions):
     total = [0, 0]
     for p in positions:
         np = normalize(p)
@@ -98,7 +98,7 @@ def centroid(positions):
         total[1] += np[1]
     total[0] /= len(positions)
     total[1] /= len(positions)
-    return round(total[0]), round(total[1])
+    return min(positions, key=lambda p: gmap.dist(total, p))
 
 
 def get_halite_by_position(gmap):
@@ -106,7 +106,7 @@ def get_halite_by_position(gmap):
 
 
 def log(s):
-    # logging.info('[{}] {}'.format(datetime.now(), s))
+    logging.info('[{}] {}'.format(datetime.now(), s))
     pass
 
 
@@ -159,8 +159,7 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos, turns_remaining, endgame,
-                        dropoff_radius=8):
+    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos, turns_remaining, endgame):
         # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         n = len(ships)
@@ -168,7 +167,7 @@ class ResourceAllocation:
         scheduled = [False] * n
 
         if endgame:
-            return [dropoff_by_pos[ships[i].pos] for i in range(n)], [], []
+            return [dropoff_by_pos[ships[i].pos] for i in range(n)]
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
@@ -205,29 +204,58 @@ class ResourceAllocation:
             if len(unscheduled) == 0:
                 break
 
-        log('gathering potential dropoffs')
-        score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(me, gmap, dropoffs, goals,
-                                                                                       dropoff_radius)
-        log(score_by_dropoff)
-        log(goals_by_dropoff)
+        return goals
 
+
+class DropoffAllocation:
+    @staticmethod
+    def add_dropoffs(me, gmap, ships, dropoffs, dropoff_by_pos, endgame, goals,
+                     dropoff_radius=8):
+        n = len(ships)
         planned_dropoffs = []
         costs = []
-        ships_for_dropoffs = set(range(n))
-        if n > 10:
-            planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
-            planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
-            for new_dropoff in planned_dropoffs:
+
+        if endgame:
+            return goals, planned_dropoffs, costs
+
+        clusters = Clustering.cluster(gmap, goals, separation_dist=2 * dropoff_radius)
+        cluster_goals = [[goals[i] for i in cluster] for cluster in clusters]
+        centroids = [centroid(gmap, cluster_goals[ci]) for ci in range(len(clusters))]
+        for ci, cluster in enumerate(clusters):
+            log('Cluster {} centered at {}: {}'.format(ci, centroids[ci], [ships[i].id for i in cluster]))
+            if len(cluster) > 2 and gmap.dist(centroids[ci], dropoff_by_pos[centroids[ci]]) >= 2 * dropoff_radius:
+                ship_i = min(cluster, key=lambda i: gmap.dist(goals[i], centroids[ci]))
+                new_dropoff = goals[ship_i]
+                planned_dropoffs.append(goals[ship_i])
+                costs.append(constants.DROPOFF_COST - ships[ship_i].halite_amount - gmap[new_dropoff].halite_amount)
+                goals[ship_i] = None if ships[ship_i].pos == new_dropoff else new_dropoff
+
                 log('dropoff position: {}'.format(new_dropoff))
-
-                i = min(ships_for_dropoffs, key=lambda i: gmap.dist(ships[i].pos, new_dropoff))
-                ships_for_dropoffs.remove(i)
-                costs.append(constants.DROPOFF_COST - ships[i].halite_amount - gmap[new_dropoff].halite_amount)
-
-                log('chosen ship: {}'.format(ships[i]))
-                goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
+                log('chosen ship: {}'.format(ships[ship_i]))
 
         return goals, planned_dropoffs, costs
+
+        # log('gathering potential dropoffs')
+        # score_by_dropoff, goals_by_dropoff = DropoffAllocation.get_potential_dropoffs(me, gmap, dropoffs, goals,
+        #                                                                               dropoff_radius)
+        # log(score_by_dropoff)
+        # log(goals_by_dropoff)
+        #
+        # ships_for_dropoffs = set(range(n))
+        # if n > 10:
+        #     planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
+        #     planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
+        #     for new_dropoff in planned_dropoffs:
+        #         log('dropoff position: {}'.format(new_dropoff))
+        #
+        #         i = min(ships_for_dropoffs, key=lambda i: gmap.dist(ships[i].pos, new_dropoff))
+        #         ships_for_dropoffs.remove(i)
+        #         costs.append(constants.DROPOFF_COST - ships[i].halite_amount - gmap[new_dropoff].halite_amount)
+        #
+        #         log('chosen ship: {}'.format(ships[i]))
+        #         goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
+        #
+        # return goals, planned_dropoffs, costs
 
     @staticmethod
     def get_potential_dropoffs(me, gmap, dropoffs, goals, dropoff_radius):
@@ -237,8 +265,8 @@ class ResourceAllocation:
         score_by_dropoff = {}
         goals_by_dropoff = {}
         for pos in sorted(halite_by_pos, key=halite_by_pos.get, reverse=True)[:constants.WIDTH]:
-            can, score, num_goals = ResourceAllocation.can_convert_to_dropoff(me, gmap, pos, dropoffs, goals,
-                                                                              dropoff_radius)
+            can, score, num_goals = DropoffAllocation.can_convert_to_dropoff(me, gmap, pos, dropoffs, goals,
+                                                                             dropoff_radius)
             if can:
                 score_by_dropoff[pos] = score
                 goals_by_dropoff[pos] = num_goals
@@ -279,6 +307,44 @@ class ResourceAllocation:
                 goals_around += 1
 
         return halite_around > DROPOFF_COST_MULTIPLIER * constants.DROPOFF_COST, halite_around, goals_around
+
+
+class Clustering:
+    @staticmethod
+    def dist(gmap, positions, cluster_a, cluster_b):
+        max_dist = 0
+        for i in cluster_a:
+            for j in cluster_b:
+                d = gmap.dist(positions[i], positions[j])
+                if d > max_dist:
+                    max_dist = d
+        return max_dist
+
+    @staticmethod
+    def cluster(gmap, positions, separation_dist):
+        clusters = {i: {i} for i in range(len(positions))}
+        while True:
+            if len(clusters) == 1:
+                return list(clusters.values())
+
+            min_dist = math.inf
+            min_clusters = []
+
+            for cluster_a in clusters:
+                for cluster_b in clusters:
+                    if cluster_a == cluster_b:
+                        continue
+                    d = Clustering.dist(gmap, positions, clusters[cluster_a], clusters[cluster_b])
+                    if d < min_dist:
+                        min_dist = d
+                        min_clusters = [cluster_a, cluster_b]
+
+            if min_dist >= separation_dist:
+                return list(clusters.values())
+
+            cluster_a, cluster_b = min_clusters
+            clusters[cluster_a].update(clusters[cluster_b])
+            del clusters[cluster_b]
 
 
 class PathPlanning:
@@ -515,6 +581,7 @@ class Commander:
         my_ships = len(me.ships_produced)
         other_ships = [len(self.game.players[other].ships_produced) for other in self.game.others]
         other_avg = math.ceil(sum(other_ships) / len(other_ships))
+        # TODO stop making once you get to halfway through game?
         return not self.endgame and my_ships <= other_avg
 
     def produce_commands(self, me, gmap):
@@ -540,9 +607,14 @@ class Commander:
 
         log('sorted ships: {}'.format(ships))
 
-        goals, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos,
-                                                                            self.turns_remaining, self.endgame)
+        goals = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos,
+                                                   self.turns_remaining, self.endgame)
         log('allocated goals: {}'.format(goals))
+
+        goals, planned_dropoffs, costs = DropoffAllocation.add_dropoffs(me, gmap, ships, dropoffs,
+                                                                        dropoff_by_pos, self.endgame, goals)
+
+        log('added dropoffs')
 
         halite_available = me.halite_amount
         spawning = False
