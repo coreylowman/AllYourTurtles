@@ -168,7 +168,7 @@ class ResourceAllocation:
         scheduled = [False] * n
 
         if endgame:
-            return [dropoff_by_pos[ships[i].pos] for i in range(n)], []
+            return [dropoff_by_pos[ships[i].pos] for i in range(n)], [], []
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
