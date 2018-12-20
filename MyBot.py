@@ -140,7 +140,7 @@ class IncomeEstimation:
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / turns_to_dropoff
 
-        return collect_hpt + dropoff_bonus + allies_nearby - (opponents_nearby / constants.NUM_OPPONENTS)
+        return collect_hpt + dropoff_bonus + allies_nearby
 
     @staticmethod
     def roi(game, me, gmap):
