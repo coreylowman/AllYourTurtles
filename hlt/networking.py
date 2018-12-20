@@ -36,6 +36,7 @@ class Game:
         self.others.remove(self.my_id)
         self.game_map = GameMap._generate()
         constants.set_dimensions(self.game_map.width, self.game_map.height)
+        constants.set_num_opponents(len(self.others))
 
     def ready(self, name):
         """

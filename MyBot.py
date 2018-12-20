@@ -112,7 +112,8 @@ def log(s):
 
 class IncomeEstimation:
     @staticmethod
-    def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then, inspired):
+    def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then, inspired, allies_nearby,
+               opponents_nearby):
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
         turns_to_move = gmap.dist(ship.pos, destination) + 1
@@ -139,7 +140,7 @@ class IncomeEstimation:
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / turns_to_dropoff
 
-        return collect_hpt + dropoff_bonus
+        return collect_hpt + dropoff_bonus + allies_nearby + opponents_nearby / constants.NUM_OPPONENTS
 
     @staticmethod
     def roi(game, me, gmap):
@@ -172,10 +173,12 @@ class ResourceAllocation:
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
-        ships_by_pos = {}
+        opponents_around = {}
+        allies_around = {}
         for pos in gmap.positions:
             my_ships, other_ships = ships_around(gmap, pos, me.id, constants.INSPIRATION_RADIUS)
-            ships_by_pos[pos] = other_ships
+            allies_around[pos] = my_ships
+            opponents_around[pos] = other_ships
 
         log('building assignments')
         hpt_by_assignment = {}
@@ -183,7 +186,8 @@ class ResourceAllocation:
             # TODO don't assign to a position nearby with an enemy ship on it
             for p in VISION_BY_POS[ships[i].pos]:
                 hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], p, dropoff_by_pos[p],
-                                              ships_by_pos[p] >= constants.INSPIRATION_SHIP_COUNT)
+                                              opponents_around[p] >= constants.INSPIRATION_SHIP_COUNT,
+                                              allies_around[p], opponents_around[p])
                 hpt_by_assignment[(p, i)] = hpt
 
         log('sorting assignments')
