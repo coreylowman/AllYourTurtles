@@ -311,8 +311,7 @@ class PathPlanning:
         for opponent_ship in opponent_ships:
             add_reservation(opponent_ship.pos, 0, is_own=False)
             my_ships, opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
-            # TODO leq instead of le?
-            if my_ships < opponent_ships:
+            if my_ships <= opponent_ships:
                 for next_pos in opponent_model.get_next_positions_for(opponent_ship):
                     add_reservation(next_pos, 1, is_own=False)
 
