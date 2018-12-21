@@ -98,7 +98,8 @@ def centroid(gmap, positions):
         total[1] += np[1]
     total[0] /= len(positions)
     total[1] /= len(positions)
-    return min(positions, key=lambda p: gmap.dist(total, p))
+    # return min(positions, key=lambda p: gmap.dist(total, p))
+    return round(total[0]), round(total[1])
 
 
 def get_halite_by_position(gmap):
@@ -220,18 +221,23 @@ class DropoffAllocation:
 
         clusters = Clustering.cluster(gmap, goals, separation_dist=2 * dropoff_radius)
         cluster_goals = [[goals[i] for i in cluster] for cluster in clusters]
-        centroids = [centroid(gmap, cluster_goals[ci]) for ci in range(len(clusters))]
+        cluster_centroids = [centroid(gmap, cluster_goals[ci]) for ci in range(len(clusters))]
         for ci, cluster in enumerate(clusters):
-            log('Cluster {} centered at {}: {}'.format(ci, centroids[ci], [ships[i].id for i in cluster]))
-            if len(cluster) > 2 and gmap.dist(centroids[ci], dropoff_by_pos[centroids[ci]]) >= 2 * dropoff_radius:
-                ship_i = min(cluster, key=lambda i: gmap.dist(goals[i], centroids[ci]))
+            log('Cluster {} centered at {}: {}'.format(ci, cluster_centroids[ci], [ships[i].id for i in cluster]))
+            halite_in_area = sum(map(gmap.halite_at, pos_around(cluster_centroids[ci], dropoff_radius)))
+            available_space = sum(constants.MAX_HALITE - ships[i].halite_amount for i in cluster)
+            dist = gmap.dist(cluster_centroids[ci], dropoff_by_pos[cluster_centroids[ci]])
+            log('\thalite around: {}'.format(halite_in_area))
+            log('\tavailable space: {}'.format(available_space))
+            if len(cluster) > 2 and halite_in_area > constants.DROPOFF_COST and dist >= 2 * dropoff_radius:
+                ship_i = min(cluster, key=lambda i: gmap.dist(goals[i], cluster_centroids[ci]))
                 new_dropoff = goals[ship_i]
                 planned_dropoffs.append(goals[ship_i])
                 costs.append(constants.DROPOFF_COST - ships[ship_i].halite_amount - gmap[new_dropoff].halite_amount)
                 goals[ship_i] = None if ships[ship_i].pos == new_dropoff else new_dropoff
 
-                log('dropoff position: {}'.format(new_dropoff))
-                log('chosen ship: {}'.format(ships[ship_i]))
+                log('\tdropoff position: {}'.format(new_dropoff))
+                log('\tchosen ship: {}'.format(ships[ship_i]))
 
         return goals, planned_dropoffs, costs
 
