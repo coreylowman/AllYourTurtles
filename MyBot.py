@@ -14,6 +14,11 @@ DROPOFF_COST_MULTIPLIER = 0
 VISION_BY_POS = {}
 
 
+def log(s):
+    logging.info('[{}] {}'.format(datetime.now(), s))
+    pass
+
+
 def set_constants(game):
     global DROPOFF_COST_MULTIPLIER, VISION_BY_POS
 
@@ -90,6 +95,15 @@ def ships_around(gmap, p, owner, max_radius):
     return ships, other_ships
 
 
+def ships_by_owner_around(gmap, p, max_radius, ignore):
+    ships_by_owner = defaultdict(list)
+    for p in pos_around(p, max_radius):
+        if gmap[p].is_occupied and gmap[p].ship.owner != ignore:
+            ship = gmap[p].ship
+            ships_by_owner[ship.owner].append(ship)
+    return ships_by_owner
+
+
 def centroid(positions):
     total = [0, 0]
     for p in positions:
@@ -103,11 +117,6 @@ def centroid(positions):
 
 def get_halite_by_position(gmap):
     return {p: gmap[p].halite_amount for p in gmap.positions}
-
-
-def log(s):
-    # logging.info('[{}] {}'.format(datetime.now(), s))
-    pass
 
 
 class IncomeEstimation:
@@ -159,16 +168,17 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos, turns_remaining, endgame,
+    def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos_by_owner, turns_remaining, endgame,
                         dropoff_radius=8):
         # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
         scheduled = [False] * n
+        dropoff_by_pos = dropoff_by_pos_by_owner[me.id]
 
         if endgame:
-            return [dropoff_by_pos[ships[i].pos] for i in range(n)], [], []
+            return [dropoff_by_pos[ships[i].pos] for i in range(n)], [], [], set()
 
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
@@ -179,11 +189,39 @@ class ResourceAllocation:
             allies_around[pos] = my_ships
             opponents_around[pos] = other_ships
 
+        # TODO attack if closer to one of my dropoffs, hpt of enemy ship is better, and outnumber
+        targets = set()
+        for i in unscheduled:
+            nearest_dropoff = gmap.dist(dropoff_by_pos[ships[i].pos], ships[i].pos)
+            enemies_by_owner = ships_by_owner_around(gmap, ships[i].pos, constants.INSPIRATION_RADIUS, ignore=me.id)
+            possible_targets = []
+            for owner, opponent_ships in enemies_by_owner.items():
+                for opponent_ship in opponent_ships:
+                    enemy_nearest_dropoff = gmap.dist(dropoff_by_pos_by_owner[owner][opponent_ship.pos],
+                                                      opponent_ship.pos)
+                    allies = allies_around[opponent_ship.pos]
+                    opponents = opponents_around[opponent_ship.pos]
+                    if nearest_dropoff < enemy_nearest_dropoff and allies > 1 and allies > opponents:
+                        possible_targets.append(opponent_ship)
+
+            if len(possible_targets) > 0:
+                scheduled[i] = True
+                target = min(possible_targets, key=lambda s: gmap.dist(ships[i].pos, s.pos))
+                goals[i] = target.pos
+                scheduled_positions.add(goals[i])
+                targets.add(target)
+                log('{} attacking {}'.format(ships[i], goals[i]))
+
+        unscheduled = [i for i in range(n) if not scheduled[i]]
+
         log('building assignments')
         hpt_by_assignment = {}
         for i in unscheduled:
             # TODO don't assign to a position nearby with an enemy ship on it
             for p in VISION_BY_POS[ships[i].pos]:
+                if p in scheduled_positions:
+                    continue
+
                 hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], p, dropoff_by_pos[p],
                                               opponents_around[p] >= constants.INSPIRATION_SHIP_COUNT)
                 hpt_by_assignment[(p, i)] = hpt
@@ -229,7 +267,7 @@ class ResourceAllocation:
                 log('chosen ship: {}'.format(ships[i]))
                 goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
 
-        return goals, planned_dropoffs, costs
+        return goals, planned_dropoffs, costs, targets
 
     @staticmethod
     def get_potential_dropoffs(me, gmap, dropoffs, goals, dropoff_radius):
@@ -285,7 +323,7 @@ class ResourceAllocation:
 
 class PathPlanning:
     @staticmethod
-    def next_positions_for(me, gmap, ships, opponent_ships, opponent_model, turns_remaining, goals, spawning):
+    def next_positions_for(me, gmap, ships, opponent_ships, targets, opponent_model, turns_remaining, goals, spawning):
         n = len(ships)
         current = [ships[i].pos for i in range(n)]
         next_positions = [current[i] for i in range(n)]
@@ -309,6 +347,9 @@ class PathPlanning:
             add_reservation(me.shipyard.pos, 1, is_own=True)
 
         for opponent_ship in opponent_ships:
+            if opponent_ship in targets:
+                continue
+
             add_reservation(opponent_ship.pos, 0, is_own=False)
             my_ships, opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
             if my_ships <= opponent_ships:
@@ -526,6 +567,13 @@ class Commander:
         ships = sorted(dropoff_dist_by_ship,
                        key=lambda ship: (dropoff_dist_by_ship[ship], -ship.halite_amount, ship.id))
 
+        dropoff_by_pos_by_owner = {me.id: dropoff_by_pos}
+        for other in self.game.others:
+            opponent = self.game.players[other]
+            drps = [opponent.shipyard.pos] + [drp.pos for drp in opponent.get_dropoffs()]
+            dropoff_by_pos_by_owner[other] = {pos: min(drps, key=lambda drp: gmap.dist(drp, pos)) for pos in
+                                              gmap.positions}
+
         if not self.endgame:
             turns_remaining = self.turns_remaining
             self.endgame = any(dropoff_dist_by_ship[ship] >= turns_remaining for ship in ships)
@@ -541,8 +589,9 @@ class Commander:
 
         log('sorted ships: {}'.format(ships))
 
-        goals, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos,
-                                                                            self.turns_remaining, self.endgame)
+        goals, planned_dropoffs, costs, targets = ResourceAllocation.goals_for_ships(me, gmap, ships, dropoffs,
+                                                                                     dropoff_by_pos_by_owner,
+                                                                                     self.turns_remaining, self.endgame)
         log('allocated goals: {}'.format(goals))
 
         halite_available = me.halite_amount
@@ -554,7 +603,7 @@ class Commander:
             spawning = True
             log('spawning')
 
-        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.opponent_model,
+        next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, targets, self.opponent_model,
                                                          self.turns_remaining, goals, spawning)
         log('planned paths: {}'.format(next_positions))
 
