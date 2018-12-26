@@ -170,7 +170,6 @@ class ResourceAllocation:
     @staticmethod
     def goals_for_ships(me, gmap, ships, dropoffs, dropoff_by_pos_by_owner, turns_remaining, endgame,
                         dropoff_radius=8):
-        # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
@@ -189,7 +188,6 @@ class ResourceAllocation:
             allies_around[pos] = my_ships
             opponents_around[pos] = other_ships
 
-        # TODO attack if closer to one of my dropoffs, hpt of enemy ship is better, and outnumber
         targets = set()
         for i in unscheduled:
             nearest_dropoff = gmap.dist(dropoff_by_pos[ships[i].pos], ships[i].pos)
@@ -332,10 +330,14 @@ class PathPlanning:
         scheduled = [False] * n
         dropoffs = {me.shipyard.pos}
         dropoffs.update({drp.pos for drp in me.get_dropoffs()})
+        target_positions = set(s.pos for s in targets)
 
         log('reserving other ship positions')
 
         def add_reservation(pos, time, is_own):
+            if not is_own and pos in target_positions:
+                return
+
             # if not a dropoff, just add
             # if is a dropoff, add if enemy is reserving or if not endgame
             if pos not in dropoffs or not is_own or turns_remaining - time > constants.WIDTH:
