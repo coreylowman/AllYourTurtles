@@ -47,27 +47,6 @@ def direction_between(a, b):
             return d
 
 
-def iterate_by_radius(p, max_radius=math.inf):
-    p = normalize(p)
-    explored = set()
-    current = {p}
-    r = 0
-    while len(current) > 0:
-        if r > max_radius:
-            return
-
-        yield current
-
-        nexts = set()
-        for p in current:
-            for n in cardinal_neighbors(p):
-                if n not in explored:
-                    nexts.add(n)
-                    explored.add(n)
-        current = nexts
-        r += 1
-
-
 def pos_around(p, radius):
     positions = set()
     for y in range(radius):
@@ -124,6 +103,7 @@ class IncomeEstimation:
 
         if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
             # TODO also add in value indicating hpt of creating a new ship
+            # TODO discount if blocked?
             amount_gained = ship.halite_amount
         else:
             # TODO take into account movement cost?
@@ -312,8 +292,7 @@ class PathPlanning:
         for opponent_ship in opponent_ships:
             add_reservation(opponent_ship.pos, 0, is_own=False)
             my_ships, opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
-            # TODO change back to <, and add guard: my_total_ships < max(opponent total ships)
-            if my_ships <= opponent_ships:
+            if my_ships < opponent_ships:
                 for next_pos in opponent_model.get_next_positions_for(opponent_ship):
                     add_reservation(next_pos, 1, is_own=False)
 
