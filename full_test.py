@@ -10,16 +10,16 @@ def extract_halite(line):
 delta_by_config = {}
 
 for opponents in [
-    1,
+    # 1,
     3
 ]:
-    for size in reversed([
+    for size in [
         32,
         40,
         48,
         56,
         64
-    ]):
+    ]:
         deltas = []
         for i in range(5):
             output = subprocess.check_output(
