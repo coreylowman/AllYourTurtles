@@ -115,6 +115,7 @@ class IncomeEstimation:
     def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then, inspired):
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
+        # TODO consider blocking opponent from dropoff
         turns_to_move = gmap.dist(ship.pos, destination) + 1
         turns_to_dropoff = gmap.dist(destination, closest_dropoff_then) + 1
 
@@ -453,7 +454,7 @@ class PathPlanning:
 
 
 class OpponentModel:
-    def __init__(self, n=3):
+    def __init__(self, n=5):
         self._n = n
         self._pos_by_ship = {}
         self._moves_by_ship = {}
@@ -481,8 +482,8 @@ class OpponentModel:
 
         if ship.halite_amount < gmap[ship.pos].halite_amount / constants.MOVE_COST_RATIO:
             predicted_moves = {(0, 0)}
-        # elif len(set(self._moves_by_ship[ship])) == 1:
-        #     predicted_moves = {self._moves_by_ship[ship][0]}
+        elif len(set(self._moves_by_ship[ship])) == 1 and self._moves_by_ship[ship][0] == (0, 0):
+            predicted_moves = {(0, 0)}
         else:
             predicted_moves = set(constants.CARDINAL_DIRECTIONS + [(0, 0)])
         self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
