@@ -293,8 +293,8 @@ class PathPlanning:
 
         for opponent_ship in opponent_ships:
             add_reservation(opponent_ship.pos, 0, is_own=False)
-            my_ships, opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
-            if my_ships < opponent_ships:
+            num_my_ships, num_opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
+            if num_my_ships <= num_opponent_ships:
                 for next_pos in opponent_model.get_next_positions_for(opponent_ship):
                     add_reservation(next_pos, 1, is_own=False)
 
@@ -310,7 +310,7 @@ class PathPlanning:
         log('locking stills')
         for i in unscheduled:
             cost = gmap[current[i]].halite_amount / constants.MOVE_COST_RATIO
-            if current[i] == goals[i] or cost > ships[i].halite_amount:
+            if cost > ships[i].halite_amount:
                 add_reservation(current[i], 1, is_own=True)
                 scheduled[i] = True
 
@@ -380,7 +380,7 @@ class PathPlanning:
                 if pos == current:
                     halite_on_ground -= amt
 
-            if current == goal:
+            if current == goal and current not in reservation_table[t] and t > 0:
                 return PathPlanning._reconstruct_path(came_from, cpt)
 
             # log('- Expanding {} at {}. f={}'.format(current, t, f_score[current]))
