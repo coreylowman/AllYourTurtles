@@ -293,10 +293,8 @@ class PathPlanning:
 
         for opponent_ship in opponent_ships:
             add_reservation(opponent_ship.pos, 0, is_own=False)
-            num_my_ships, num_opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
-            if num_my_ships <= num_opponent_ships:
-                for next_pos in opponent_model.get_next_positions_for(opponent_ship):
-                    add_reservation(next_pos, 1, is_own=False)
+            for next_pos in opponent_model.get_next_positions_for(opponent_ship):
+                add_reservation(next_pos, 1, is_own=False)
 
         log('converting dropoffs')
         for i in range(n):
@@ -511,11 +509,9 @@ class OpponentModel:
             predicted_moves = {(0, 0)}
         elif len(set(moves)) == 1 and moves[0] == (0, 0):
             predicted_moves = {(0, 0)}
-        elif moves[-1] == (0, 0) and all(
-                gmap[ship.pos].halite_amount > gmap[p].halite_amount for p in neighbors):
-            predicted_moves = {(0, 0)}
         else:
-            predicted_moves = set(moves)
+            # predicted_moves = set(moves)
+            predicted_moves = list(constants.CARDINAL_DIRECTIONS) + [(0, 0)]
 
         self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
         self._potentials_by_ship[ship] = set(neighbors + [ship.pos])
