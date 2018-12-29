@@ -27,6 +27,7 @@ CAPTURE_SHIP_ADVANTAGE = 0
 WIDTH = 0
 HEIGHT = 0
 
+NUM_PLAYERS = 0
 NUM_OPPONENTS = 0
 
 CARDINAL_DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
@@ -110,5 +111,6 @@ def set_dimensions(width, height):
 
 
 def set_num_opponents(num_opponents):
-    global NUM_OPPONENTS
+    global NUM_PLAYERS, NUM_OPPONENTS
+    NUM_PLAYERS = num_opponents + 1
     NUM_OPPONENTS = num_opponents

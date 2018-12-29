@@ -9,6 +9,8 @@ from datetime import datetime
 import logging
 from collections import defaultdict
 import math
+from math import ceil
+from statistics import mean
 
 DROPOFF_COST_MULTIPLIER = 0
 VISION_BY_POS = {}
@@ -511,11 +513,8 @@ class OpponentModel:
             predicted_moves = {(0, 0)}
         elif len(set(moves)) == 1 and moves[0] == (0, 0):
             predicted_moves = {(0, 0)}
-        elif moves[-1] == (0, 0) and all(
-                gmap[ship.pos].halite_amount > gmap[p].halite_amount for p in neighbors):
-            predicted_moves = {(0, 0)}
         else:
-            predicted_moves = set(moves)
+            predicted_moves = list(constants.CARDINAL_DIRECTIONS) + [(0, 0)]
 
         self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
         self._potentials_by_ship[ship] = set(neighbors + [ship.pos])
@@ -546,11 +545,14 @@ class Commander:
         log('Turn took {}'.format(datetime.now() - start_time))
 
     def should_make_ship(self, me):
-        my_ships = len(me.ships_produced)
-        other_ships = [len(self.game.players[other].ships_produced) for other in self.game.others]
-        other_avg = math.ceil(sum(other_ships) / len(other_ships))
+        if self.endgame:
+            return False
+        my_current = len(me.get_ships())
+        my_produced = len(me.ships_produced)
+        opponent_current = ceil(mean([len(self.game.players[other].get_ships()) for other in self.game.others]))
+        opponent_produced = ceil(mean([len(self.game.players[other].ships_produced) for other in self.game.others]))
         roi = IncomeEstimation.roi(self.game, me, self.game.game_map)
-        return not self.endgame and (my_ships <= other_avg or roi > 0)
+        return (my_produced < opponent_produced and my_current < opponent_current) or roi > 0
 
     def produce_commands(self, me, gmap):
         dropoffs = [me.shipyard.pos] + [drp.pos for drp in me.get_dropoffs()]
