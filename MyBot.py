@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 from collections import defaultdict
 import math
+from statistics import mean
 
 DROPOFF_COST_MULTIPLIER = 0
 VISION_BY_POS = {}
@@ -49,8 +50,8 @@ def direction_between(a, b):
 
 def pos_around(p, radius):
     positions = set()
-    for y in range(radius):
-        for x in range(radius - y):
+    for y in range(radius + 1):
+        for x in range(radius + 1 - y):
             positions.add(normalize((p[0] + x, p[1] + y)))
             positions.add(normalize((p[0] - x, p[1] + y)))
             positions.add(normalize((p[0] - x, p[1] - y)))
@@ -69,15 +70,28 @@ def ships_around(gmap, p, owner, max_radius):
     return ships, other_ships
 
 
-def centroid(positions):
+def halite_around(gmap, pos, owner, max_radius):
+    halite = 0
+    for p in pos_around(pos, max_radius):
+        halite += gmap[p].halite_amount
+        if gmap[p].is_occupied and gmap[p].ship.owner == owner:
+            halite += gmap[p].ship.halite_amount
+    return halite
+
+
+def centroid(gmap, positions):
+    reference = positions[0]
     total = [0, 0]
     for p in positions:
-        np = normalize(p)
-        total[0] += np[0]
-        total[1] += np[1]
+        rdx = p[0] - reference[0]
+        rdy = p[1] - reference[1]
+        total[0] += rdx if abs(rdx) < abs(rdx - constants.WIDTH) else rdx - constants.WIDTH
+        total[1] += rdy if abs(rdy) < abs(rdy - constants.HEIGHT) else rdy - constants.HEIGHT
     total[0] /= len(positions)
     total[1] /= len(positions)
-    return round(total[0]), round(total[1])
+    total[0] += reference[0]
+    total[1] += reference[1]
+    return min(positions, key=lambda p: gmap.dist(total, p))
 
 
 def get_halite_by_position(gmap):
@@ -140,16 +154,15 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(me, gmap, ships, other_ships, dropoffs, dropoff_by_pos, turns_remaining, endgame,
-                        dropoff_radius=8):
-        # TODO if we have way more ships than opponent ATTACK
+    def goals_for_ships(me, gmap, ships, opponent_ships, dropoffs, dropoff_by_pos_by_owner, turns_remaining, endgame):
         scheduled_positions = set()
         n = len(ships)
         goals = [ships[i].pos for i in range(n)]
         scheduled = [False] * n
+        dropoff_by_pos = dropoff_by_pos_by_owner[me.id]
 
         if endgame:
-            return [dropoff_by_pos[ships[i].pos] for i in range(n)], [], []
+            return [dropoff_by_pos[ships[i].pos] for i in range(n)]
 
         unscheduled = list(range(n))
 
@@ -158,7 +171,7 @@ class ResourceAllocation:
         for ship in ships:
             for p in pos_around(ship.pos, constants.INSPIRATION_RADIUS):
                 allies_around[p] += 1
-        for ship in other_ships:
+        for ship in opponent_ships:
             for p in pos_around(ship.pos, constants.INSPIRATION_RADIUS):
                 opponents_around[p] += 1
 
@@ -190,80 +203,90 @@ class ResourceAllocation:
             if len(unscheduled) == 0:
                 break
 
-        log('gathering potential dropoffs')
-        score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(me, gmap, dropoffs, goals,
-                                                                                       dropoff_radius)
-        log(score_by_dropoff)
-        log(goals_by_dropoff)
+        return goals
 
+
+class DropoffAllocation:
+    @staticmethod
+    def add_dropoffs(me, gmap, ships, dropoffs, dropoff_by_pos, endgame, goals,
+                     dropoff_radius=6):
+        n = len(ships)
         planned_dropoffs = []
         costs = []
-        ships_for_dropoffs = set(range(n))
-        if n > 10:
-            planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
-            planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
-            for new_dropoff in planned_dropoffs:
-                log('dropoff position: {}'.format(new_dropoff))
+        positions = [ships[i].pos for i in range(n)]
+        if not endgame:
+            clusters = Clustering.cluster(gmap, positions, separation_dist=4)
+            for ci, cluster in enumerate(clusters):
+                cluster_centroid = centroid(gmap, [positions[i] for i in cluster])
+                dropoff_dist = mean([gmap.dist(positions[i], dropoff_by_pos[positions[i]]) for i in cluster])
+                centroid_dist = mean(
+                    gmap.dist(positions[i] if goals[i] in dropoffs else goals[i], cluster_centroid) for i in cluster)
+                # log('Cluster {} centered at {}, d={}, c={}: {}'.format(ci, cluster_centroid, dropoff_dist,
+                #                                                        centroid_dist,
+                #                                                        [ships[i].id for i in cluster]))
+                far_from_dropoffs = dropoff_dist >= 2 * dropoff_radius
+                belong_in_area = centroid_dist <= dropoff_radius
+                halite = halite_around(gmap, cluster_centroid, me.id, math.ceil(centroid_dist))
+                if len(cluster) > 3 and far_from_dropoffs and belong_in_area and halite > constants.DROPOFF_COST:
+                    ship_i = min(cluster, key=lambda i: gmap.dist(positions[i], cluster_centroid))
+                    new_dropoff = goals[ship_i]
+                    planned_dropoffs.append(goals[ship_i])
+                    costs.append(constants.DROPOFF_COST - ships[ship_i].halite_amount - gmap[new_dropoff].halite_amount)
+                    goals[ship_i] = None if ships[ship_i].pos == new_dropoff else new_dropoff
 
-                i = min(ships_for_dropoffs, key=lambda i: gmap.dist(ships[i].pos, new_dropoff))
-                ships_for_dropoffs.remove(i)
-                costs.append(constants.DROPOFF_COST - ships[i].halite_amount - gmap[new_dropoff].halite_amount)
-
-                log('chosen ship: {}'.format(ships[i]))
-                goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
+                    log('dropoff position: {}'.format(new_dropoff))
+                    log('chosen ship: {}'.format(ships[ship_i]))
 
         return goals, planned_dropoffs, costs
 
+
+class Clustering:
     @staticmethod
-    def get_potential_dropoffs(me, gmap, dropoffs, goals, dropoff_radius):
-        halite_by_pos = get_halite_by_position(gmap)
-
-        # get biggest halite positions as dropoffs
-        score_by_dropoff = {}
-        goals_by_dropoff = {}
-        for pos in sorted(halite_by_pos, key=halite_by_pos.get, reverse=True)[:constants.WIDTH]:
-            can, score, num_goals = ResourceAllocation.can_convert_to_dropoff(me, gmap, pos, dropoffs, goals,
-                                                                              dropoff_radius)
-            if can:
-                score_by_dropoff[pos] = score
-                goals_by_dropoff[pos] = num_goals
-
-        # only take the biggest dropoff when there are multiple nearby
-        winners = set()
-        for drp in score_by_dropoff:
-            conflicting_winners = {w for w in winners if gmap.dist(w, drp) < 2 * dropoff_radius}
-            if len(conflicting_winners) == 0:
-                winners.add(drp)
-            elif all([score_by_dropoff[drp] > score_by_dropoff[w] for w in conflicting_winners]):
-                winners -= conflicting_winners
-                winners.add(drp)
-
-        # select winners
-        score_by_dropoff = {drp: score_by_dropoff[drp] for drp in winners}
-        goals_by_dropoff = {drp: goals_by_dropoff[drp] for drp in winners}
-
-        return score_by_dropoff, goals_by_dropoff
+    def dist(gmap, positions, cluster_a, cluster_b):
+        min_dist = math.inf
+        for i in cluster_a:
+            for j in cluster_b:
+                d = gmap.dist(positions[i], positions[j])
+                if d < min_dist:
+                    min_dist = d
+        return min_dist
 
     @staticmethod
-    def can_convert_to_dropoff(me, gmap, pos, dropoffs, goals, dropoff_radius):
-        if gmap[pos].has_structure:
-            return False, 0, 0
+    def cluster(gmap, positions, separation_dist):
+        if len(positions) == 0:
+            return []
 
-        for drp in dropoffs:
-            if gmap.dist(pos, drp) <= 2 * dropoff_radius:
-                return False, 0, 0
+        cluster_by_id = {i: {i} for i in range(len(positions))}
+        clusters = list(cluster_by_id.keys())
 
-        # give bonus for the halite on the dropoff
-        halite_around = gmap[pos].halite_amount
-        goals_around = 0
-        for p in pos_around(pos, dropoff_radius):
-            halite_around += gmap[p].halite_amount
-            if gmap[p].is_occupied and gmap[p].ship.owner == me.id:
-                halite_around += gmap[p].ship.halite_amount
-            if p in goals:
-                goals_around += 1
+        dists = {}
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                dists[(clusters[i], clusters[j])] = Clustering.dist(gmap, positions, cluster_by_id[clusters[i]],
+                                                                    cluster_by_id[clusters[j]])
 
-        return halite_around > DROPOFF_COST_MULTIPLIER * constants.DROPOFF_COST, halite_around, goals_around
+        while True:
+            if len(clusters) == 1:
+                return list(cluster_by_id.values())
+
+            cluster_a, cluster_b = min(dists, key=dists.get)
+            if dists[(cluster_a, cluster_b)] >= separation_dist:
+                return list(cluster_by_id.values())
+
+            cluster_by_id[cluster_a].update(cluster_by_id[cluster_b])
+            del cluster_by_id[cluster_b]
+            clusters.remove(cluster_b)
+
+            for cluster in clusters:
+                if cluster == cluster_a:
+                    continue
+                key = (cluster_a, cluster) if cluster_a < cluster else (cluster, cluster_a)
+                other_key = (cluster_b, cluster) if cluster_b < cluster else (cluster, cluster_b)
+                dists[key] = min(dists[key], dists[other_key])
+
+            for cluster in clusters:
+                key = (cluster_b, cluster) if cluster_b < cluster else (cluster, cluster_b)
+                del dists[key]
 
 
 class PathPlanning:
@@ -507,10 +530,7 @@ class OpponentModel:
 
         if ship.halite_amount < gmap[ship.pos].halite_amount / constants.MOVE_COST_RATIO:
             predicted_moves = {(0, 0)}
-        elif len(set(moves)) == 1 and moves[0] == (0, 0):
-            predicted_moves = {(0, 0)}
         else:
-            # predicted_moves = set(moves)
             predicted_moves = list(constants.CARDINAL_DIRECTIONS) + [(0, 0)]
 
         self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
@@ -556,7 +576,14 @@ class Commander:
         ships = sorted(dropoff_dist_by_ship,
                        key=lambda ship: (dropoff_dist_by_ship[ship], -ship.halite_amount, ship.id))
 
-        log('sorted ships: {}'.format(ships))
+        dropoff_by_pos_by_owner = {me.id: dropoff_by_pos}
+        for other in self.game.others:
+            opponent = self.game.players[other]
+            drps = [opponent.shipyard.pos] + [drp.pos for drp in opponent.get_dropoffs()]
+            dropoff_by_pos_by_owner[other] = {pos: min(drps, key=lambda drp: gmap.dist(drp, pos)) for pos in
+                                              gmap.positions}
+
+        log('sorted ships')
 
         if not self.endgame:
             turns_remaining = self.turns_remaining
@@ -570,10 +597,15 @@ class Commander:
 
         log('Updated opponent model')
 
-        goals, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(me, gmap, ships, other_ships, dropoffs,
-                                                                            dropoff_by_pos, self.turns_remaining,
-                                                                            self.endgame)
-        log('allocated goals: {}'.format(goals))
+        goals = ResourceAllocation.goals_for_ships(me, gmap, ships, other_ships, dropoffs,
+                                                   dropoff_by_pos_by_owner,
+                                                   self.turns_remaining, self.endgame)
+        log('allocated goals')
+
+        goals, planned_dropoffs, costs = DropoffAllocation.add_dropoffs(me, gmap, ships, dropoffs,
+                                                                        dropoff_by_pos, self.endgame, goals)
+
+        log('allocated dropoffs')
 
         halite_available = me.halite_amount
         spawning = False
@@ -585,7 +617,7 @@ class Commander:
 
         next_positions = PathPlanning.next_positions_for(me, gmap, ships, other_ships, self.opponent_model,
                                                          self.turns_remaining, goals, spawning)
-        log('planned paths: {}'.format(next_positions))
+        log('planned paths')
 
         commands = []
         if spawning:
@@ -612,4 +644,5 @@ def main():
         commander.run_once()
 
 
-main()
+if __name__ == '__main__':
+    main()
