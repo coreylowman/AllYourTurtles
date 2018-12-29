@@ -51,8 +51,8 @@ def direction_between(a, b):
 
 def pos_around(p, radius):
     positions = set()
-    for y in range(radius):
-        for x in range(radius - y):
+    for y in range(radius + 1):
+        for x in range(radius + 1 - y):
             positions.add(normalize((p[0] + x, p[1] + y)))
             positions.add(normalize((p[0] - x, p[1] + y)))
             positions.add(normalize((p[0] - x, p[1] - y)))
@@ -290,6 +290,17 @@ class PathPlanning:
                 if is_own:
                     reservations_self[time].add(pos)
 
+        def plan_path(i):
+            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_all)
+            if path is None:
+                path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_self)
+                if path is None:
+                    path = [(current[i], 0), (current[i], 1)]
+            for raw_pos, t in path:
+                add_reservation(raw_pos, t, is_own=True)
+            next_positions[i] = path[1][0]
+            scheduled[i] = True
+
         if spawning:
             add_reservation(me.shipyard.pos, 1, is_own=True)
 
@@ -319,18 +330,14 @@ class PathPlanning:
         unscheduled = [i for i in range(n) if not scheduled[i]]
 
         log('planning paths')
+        for i in unscheduled:
+            if current[i] == goals[i]:
+                plan_path(i)
 
-        for q, i in enumerate(unscheduled):
-            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_all)
-            if path is None:
-                path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_self)
-                if path is None:
-                    path = [(current[i], 0), (current[i], 1)]
+        unscheduled = [i for i in range(n) if not scheduled[i]]
 
-            for raw_pos, t in path:
-                if raw_pos not in dropoffs or turns_remaining - t > constants.HEIGHT:
-                    add_reservation(raw_pos, t, is_own=True)
-            next_positions[i] = path[1][0]
+        for i in unscheduled:
+            plan_path(i)
         log('paths planned')
 
         return next_positions
@@ -347,7 +354,7 @@ class PathPlanning:
             # we can just double
             return 2 * gmap.dist(p, goal)
 
-        # log('{} -> {}'.format(start_raw, goal_raw))
+        # log('{} -> {}'.format(start, goal))
 
         if start == goal and goal not in reservation_table[1]:
             return [(start, 0), (goal, 1)]
@@ -385,7 +392,7 @@ class PathPlanning:
             if current == goal and current not in reservation_table[t] and t > 0:
                 return PathPlanning._reconstruct_path(came_from, cpt)
 
-            # log('- Expanding {} at {}. f={}'.format(current, t, f_score[current]))
+            # log('- Expanding {} at {}. f={}'.format(current, t, f_score[cpt]))
 
             open_set.remove(cpt)
             closed_set.add(cpt)
@@ -426,7 +433,7 @@ class PathPlanning:
                 else:
                     halite_at[npt] = halite_left - raw_move_cost
                     extractions_at[npt] = deepcopy(extractions_at[cpt])
-                # log('-- Adding {} at {}. h={} g={}'.format(neighbor, nt, h_score[neighbor], g_score[neighbor]))
+                # log('-- Adding {} at {}. h={} g={}'.format(neighbor, nt, h_score[npt], g_score[npt]))
 
     @staticmethod
     def _reconstruct_path(prev_by_node, current):
