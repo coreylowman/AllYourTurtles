@@ -307,7 +307,7 @@ class PathPlanning:
         for opponent_ship in opponent_ships:
             add_reservation(opponent_ship.pos, 0, is_own=False)
             num_my_ships, num_opponent_ships = ships_around(gmap, opponent_ship.pos, me.id, max_radius=8)
-            if num_my_ships <= num_opponent_ships:
+            if constants.NUM_PLAYERS == 4 or num_my_ships <= num_opponent_ships:
                 for next_pos in opponent_model.get_next_positions_for(opponent_ship):
                     add_reservation(next_pos, 1, is_own=False)
 
@@ -554,12 +554,10 @@ class Commander:
     def should_make_ship(self, me):
         if self.endgame:
             return False
-        my_current = len(me.get_ships())
         my_produced = len(me.ships_produced)
-        opponent_current = ceil(mean([len(self.game.players[other].get_ships()) for other in self.game.others]))
         opponent_produced = ceil(mean([len(self.game.players[other].ships_produced) for other in self.game.others]))
         roi = IncomeEstimation.roi(self.game, me, self.game.game_map)
-        return (my_produced < opponent_produced and my_current < opponent_current) or roi > 0
+        return my_produced < opponent_produced or roi > 0
 
     def produce_commands(self, me, gmap):
         dropoffs = [me.shipyard.pos] + [drp.pos for drp in me.get_dropoffs()]
