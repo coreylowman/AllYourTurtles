@@ -150,9 +150,13 @@ class GameMap:
         self.height = height
         self._cells = cells
         self.positions = []
-        for y in range(height):
-            for x in range(width):
+        for x in range(width):
+            for y in range(height):
                 self.positions.append((x, y))
+
+        self.distance_table = list(range(width // 2 + 1))
+        self.distance_table.extend(reversed(self.distance_table[1:-1]))
+        self.distance_table.extend(reversed(self.distance_table[1:-1]))
 
     def __getitem__(self, location):
         """
@@ -160,14 +164,7 @@ class GameMap:
         :param location: the position or entity to access in this map
         :return: the contents housing that cell or entity
         """
-        if isinstance(location, tuple):
-            return self._cells[location[1]][location[0]]
-        elif isinstance(location, Position):
-            location = self.normalize(location)
-            return self._cells[location.y][location.x]
-        elif isinstance(location, Entity):
-            return self._cells[location.position.y][location.position.x]
-        return None
+        return self._cells[location[1]][location[0]]
 
     def halite_at(self, position):
         return self._cells[position[1]][position[0]].halite_amount
@@ -184,9 +181,13 @@ class GameMap:
         return min(resulting_position.x, self.width - resulting_position.x) + \
                min(resulting_position.y, self.height - resulting_position.y)
 
+    def raw_dist(self, source, target):
+        res0 = abs(source[0] - target[0])
+        res1 = abs(source[1] - target[1])
+        return min(res0, self.width - res0) + min(res1, self.height - res1)
+
     def dist(self, source, target):
-        res = abs(source[0] - target[0]), abs(source[1] - target[1])
-        return min(res[0], self.width - res[0]) + min(res[1], self.height - res[1])
+        return self.distance_table[source[0] - target[0]] + self.distance_table[source[1] - target[1]]
 
     def normalize(self, position):
         """
@@ -275,8 +276,8 @@ class GameMap:
         # later)
         for y in range(self.height):
             for x in range(self.width):
-                self[Position(x, y)].ship = None
+                self[(x, y)].ship = None
 
         for _ in range(int(input())):
             cell_x, cell_y, cell_energy = map(int, input().split())
-            self[Position(cell_x, cell_y)].halite_amount = cell_energy
+            self[(cell_x, cell_y)].halite_amount = cell_energy

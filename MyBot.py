@@ -11,20 +11,7 @@ from collections import defaultdict
 import math
 from math import ceil
 from statistics import mean
-
-DROPOFF_COST_MULTIPLIER = 0
-VISION_BY_POS = {}
-
-
-def set_constants(game):
-    global DROPOFF_COST_MULTIPLIER, VISION_BY_POS
-
-    DROPOFF_COST_MULTIPLIER = 5 if len(game.players) == 2 else 5
-
-    vision = min(constants.WIDTH, 48)
-    vision //= 2
-    for pos in game.game_map.positions:
-        VISION_BY_POS[pos] = pos_around(pos, vision)
+from heapq import nlargest
 
 
 def normalize(p):
@@ -93,34 +80,28 @@ def log(s):
 
 class IncomeEstimation:
     @staticmethod
-    def hpt_of(me, gmap, turns_remaining, ship, destination, closest_dropoff_then, inspired):
+    def hpt_of(turns_remaining, turns_to_move, turns_to_dropoff, halite_on_board, space_left, halite_on_ground,
+               inspired_halite_on_ground):
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
         # TODO consider blocking opponent from dropoff
-        turns_to_move = gmap.dist(ship.pos, destination) + 1
-        turns_to_dropoff = gmap.dist(destination, closest_dropoff_then) + 1
-
         if turns_to_dropoff > turns_remaining:
             return 0
 
-        if gmap[destination].has_structure and gmap[destination].structure.owner == me.id:
+        if turns_to_dropoff == 0:
             # TODO also add in value indicating hpt of creating a new ship
             # TODO discount if blocked?
-            amount_gained = ship.halite_amount
+            amount_gained = halite_on_board
         else:
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
-            amount_can_gain = constants.MAX_HALITE - ship.halite_amount
-            amount_extracted = gmap[destination].halite_amount
+            amount_gained = inspired_halite_on_ground
+            if amount_gained > space_left:
+                amount_gained = space_left
 
-            if inspired:
-                amount_extracted *= (1 + constants.INSPIRED_BONUS_MULTIPLIER)
-
-            amount_gained = min(amount_can_gain, amount_extracted)
-
-        collect_hpt = amount_gained / turns_to_move
+        collect_hpt = amount_gained / (turns_to_move + 1)
         # TODO dropoff bonus scale with amoutn gained
-        dropoff_bonus = 1 / turns_to_dropoff
+        dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
         return collect_hpt + dropoff_bonus
 
@@ -155,6 +136,7 @@ class ResourceAllocation:
 
         unscheduled = list(range(n))
 
+        log('calculating inspiration counts')
         opponents_around = defaultdict(int)
         allies_around = defaultdict(int)
         for ship in ships:
@@ -165,21 +147,15 @@ class ResourceAllocation:
                 opponents_around[p] += 1
 
         log('building assignments')
-        hpt_by_assignment = {}
-        for i in unscheduled:
-            # TODO don't assign to a position nearby with an enemy ship on it
-            for p in VISION_BY_POS[ships[i].pos]:
-                hpt = IncomeEstimation.hpt_of(me, gmap, turns_remaining, ships[i], p, dropoff_by_pos[p],
-                                              opponents_around[p] >= constants.INSPIRATION_SHIP_COUNT)
-                hpt_by_assignment[(p, i)] = hpt
+        assignments = ResourceAllocation.assignments(gmap, n, ships, turns_remaining, unscheduled, opponents_around,
+                                                     dropoff_by_pos)
 
         log('sorting assignments')
-
-        assignments = sorted(hpt_by_assignment, key=hpt_by_assignment.get, reverse=True)
+        assignments.sort(reverse=True)
 
         log('gathering assignments')
 
-        for pos, i in assignments:
+        for hpt, i, pos in assignments:
             if scheduled[i] or pos in scheduled_positions:
                 continue
 
@@ -215,6 +191,34 @@ class ResourceAllocation:
                 goals[i] = None if ships[i].pos == new_dropoff else new_dropoff
 
         return goals, planned_dropoffs, costs
+
+    @staticmethod
+    def assignments(gmap, n, ships, turns_remaining, unscheduled, opponents_around, dropoff_by_pos):
+        # TODO don't assign to a position nearby with an enemy ship on it
+        assignments_by_ship = [[] for i in unscheduled]
+        sxs = [ships[i].pos[0] for i in unscheduled]
+        sys = [ships[i].pos[1] for i in unscheduled]
+        halites = [ships[i].halite_amount for i in unscheduled]
+        spaces = [constants.MAX_HALITE - halites[i] for i in unscheduled]
+        for p in gmap.positions:
+            x, y = p
+            halite_on_ground = gmap[p].halite_amount
+            inspired = opponents_around[p] >= constants.INSPIRATION_SHIP_COUNT
+            inspired_halite_on_ground = halite_on_ground
+            if inspired:
+                inspired_halite_on_ground *= (1 + constants.INSPIRED_BONUS_MULTIPLIER)
+            dropoff_dist = gmap.dist(dropoff_by_pos[p], p)
+            for i in unscheduled:
+                d = gmap.distance_table[sxs[i] - x] + gmap.distance_table[sys[i] - y]
+                hpt = IncomeEstimation.hpt_of(turns_remaining, d, dropoff_dist, halites[i], spaces[i],
+                                              halite_on_ground, inspired_halite_on_ground)
+                assignments_by_ship[i].append((hpt, i, p))
+
+        log('getting n largest assignments')
+        assignments = []
+        for i in unscheduled:
+            assignments.extend(nlargest(n, assignments_by_ship[i]))
+        return assignments
 
     @staticmethod
     def get_potential_dropoffs(me, gmap, dropoffs, goals, dropoff_radius):
@@ -265,7 +269,7 @@ class ResourceAllocation:
             if p in goals:
                 goals_around += 1
 
-        return halite_around > DROPOFF_COST_MULTIPLIER * constants.DROPOFF_COST, halite_around, goals_around
+        return halite_around > 5 * constants.DROPOFF_COST, halite_around, goals_around
 
 
 class PathPlanning:
@@ -282,6 +286,8 @@ class PathPlanning:
 
         log('reserving other ship positions')
 
+        max_halite = max(map(gmap.halite_at, gmap.positions))
+
         def add_reservation(pos, time, is_own):
             # if not a dropoff, just add
             # if is a dropoff, add if enemy is reserving or if not endgame
@@ -291,9 +297,10 @@ class PathPlanning:
                     reservations_self[time].add(pos)
 
         def plan_path(i):
-            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_all)
+            path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, max_halite, reservations_all)
             if path is None:
-                path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, reservations_self)
+                path = PathPlanning.a_star(gmap, current[i], goals[i], ships[i].halite_amount, max_halite,
+                                           reservations_self)
                 if path is None:
                     path = [(current[i], 0), (current[i], 1)]
             for raw_pos, t in path:
@@ -344,7 +351,7 @@ class PathPlanning:
         return next_positions
 
     @staticmethod
-    def a_star(gmap, start, goal, starting_halite, reservation_table, window=8):
+    def a_star(gmap, start, goal, starting_halite, max_halite, reservation_table, window=8):
         """windowed hierarchical cooperative a*"""
 
         start = normalize(start)
@@ -359,9 +366,6 @@ class PathPlanning:
 
         if start == goal and goal not in reservation_table[1]:
             return [(start, 0), (goal, 1)]
-
-        halite_by_pos = get_halite_by_position(gmap)
-        max_halite = max(halite_by_pos.values())
 
         closed_set = set()
         open_set = set()
@@ -532,8 +536,6 @@ class Commander:
     def __init__(self):
         self.game = hlt.Game()
 
-        set_constants(self.game)
-
         self.game.ready("AllYourTurtles")
         self.plan_by_ship = {}
         self.endgame = False
@@ -550,7 +552,7 @@ class Commander:
         log('Starting turn {}'.format(self.game.turn_number))
         queue = self.produce_commands(self.game.me, self.game.game_map)
         self.game.end_turn(queue)
-        log('Turn took {}'.format(datetime.now() - start_time))
+        log('Turn took {}'.format((datetime.now() - start_time).total_seconds()))
 
     def should_make_ship(self, me):
         if self.endgame:
@@ -606,7 +608,7 @@ class Commander:
             if next_positions[i] is not None:
                 commands.append(ships[i].move(direction_between(ships[i].pos, next_positions[i])))
             else:
-                cost = constants.DROPOFF_COST - ships[i].halite_amount - gmap[ships[i].position].halite_amount
+                cost = constants.DROPOFF_COST - ships[i].halite_amount - gmap[ships[i].pos].halite_amount
                 if halite_available >= cost:
                     commands.append(ships[i].make_dropoff())
                     halite_available -= cost
