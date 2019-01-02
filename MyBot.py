@@ -109,20 +109,18 @@ class IncomeEstimation:
     def time_spent_mining(turns_remaining, turns_to_dropoff, space_left, halite_on_ground, is_inspired,
                           runner_up_assignment):
         multiplier = constants.INSPIRED_EXTRACT_MULTIPLIER if is_inspired else constants.EXTRACT_MULTIPLIER
+        bonus_multiplier = 1 + constants.INSPIRED_BONUS_MULTIPLIER if is_inspired else 1
         t = 0
         while space_left > 0 and halite_on_ground > 0:
-            inspired_halite_on_ground = halite_on_ground
-            if is_inspired:
-                inspired_halite_on_ground *= 1 + constants.INSPIRED_BONUS_MULTIPLIER
             hpt = IncomeEstimation.hpt_of(turns_remaining - t, 0, turns_to_dropoff, constants.MAX_HALITE - space_left,
-                                          space_left, halite_on_ground, inspired_halite_on_ground)
+                                          space_left, halite_on_ground, halite_on_ground * bonus_multiplier)
             if hpt < runner_up_assignment[0]:
                 return t, halite_on_ground
 
             extracted = min(ceil(halite_on_ground * multiplier), space_left)
             halite_on_ground -= extracted
-            if is_inspired:
-                extracted *= 1 + constants.INSPIRED_BONUS_MULTIPLIER
+
+            extracted *= bonus_multiplier
             space_left = max(space_left - extracted, 0)
             t += 1
 
@@ -168,19 +166,34 @@ class ResourceAllocation:
         assignments.sort(reverse=True)
 
         log('gathering assignments')
-
-        for hpt, i, pos in assignments:
-            if scheduled[i] or pos in scheduled_positions:
-                continue
-
+        reservations_by_pos = defaultdict(int)
+        halite_by_pos = {}
+        while len(assignments) > 0:
+            hpt, i, pos = assignments[0]
             goals[i] = pos
             scheduled[i] = True
             unscheduled.remove(i)
+            i_assignments = [a for a in assignments if a[1] == i]
+            assignments = [a for a in assignments if a[1] != i]
+            mining_time, halite_on_ground = IncomeEstimation.time_spent_mining(
+                turns_remaining, gmap.dist(pos, dropoff_by_pos[pos]), constants.MAX_HALITE - ships[i].halite_amount,
+                halite_by_pos.get(pos, gmap[pos].halite_amount), inspired_by_pos[pos], i_assignments[1])
             if goals[i] not in dropoffs:
                 scheduled_positions.add(pos)
+                reservations_by_pos[pos] += mining_time
+                halite_by_pos[pos] = halite_on_ground
 
-            if len(unscheduled) == 0:
-                break
+            inspired_halite_on_ground = halite_on_ground * (
+                1 + constants.INSPIRED_BONUS_MULTIPLIER if inspired_by_pos[pos] else 1)
+            for j, a in enumerate(assignments):
+                if a[2] == pos:
+                    id = a[1]
+                    new_hpt = IncomeEstimation.hpt_of(
+                        turns_remaining, gmap.dist(ships[id].pos, pos), gmap.dist(pos, dropoff_by_pos[pos]),
+                        ships[id].halite_amount, constants.MAX_HALITE - ships[id].halite_amount,
+                        halite_on_ground, inspired_halite_on_ground)
+                    assignments[j] = (new_hpt, a[1], a[2])
+            assignments.sort(reverse=True)
 
         for i in range(n):
             free_assignments = filter(lambda a: a[2] not in scheduled_positions, assignments_for_ship[i])
