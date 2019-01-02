@@ -10,7 +10,7 @@ def extract_halite(line):
 delta_by_config = {}
 
 for opponents in [
-    # 1,
+    1,
     3
 ]:
     for size in [
@@ -42,10 +42,8 @@ for opponents in [
             players = opponents + 1
             results = lines[i + 1:i + 1 + players]
             halite = extract_halite(results[0])
-            opponents_halite = mean(list(map(extract_halite, results[1:])))
-            deltas.append(halite - opponents_halite)
-            print(datetime.datetime.now(), players, size, deltas[-1])
-        delta_by_config[(opponents, size)] = mean(deltas)
-
-for config, delta in delta_by_config.items():
-    print(config, '\t', delta)
+            opponents_halite = list(map(extract_halite, results[1:]))
+            ds = [halite - oh for oh in opponents_halite]
+            deltas.extend(ds)
+            print(datetime.datetime.now(), players, size, ds)
+        print(mean(deltas))
