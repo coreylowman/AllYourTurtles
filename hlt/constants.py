@@ -10,6 +10,7 @@ MAX_HALITE = 0
 MAX_TURNS = 0
 
 EXTRACT_RATIO = 0
+EXTRACT_MULTIPLIER = 0
 MOVE_COST_RATIO = 0
 
 INSPIRATION_ENABLED = True
@@ -17,6 +18,7 @@ INSPIRATION_RADIUS = 0
 INSPIRATION_SHIP_COUNT = 0
 
 INSPIRED_EXTRACT_RATIO = 0
+INSPIRED_EXTRACT_MULTIPLIER = 0
 INSPIRED_BONUS_MULTIPLIER = 0
 INSPIRED_MOVE_COST_RATIO = 0
 
@@ -38,9 +40,9 @@ def load_constants(constants):
     Load constants from JSON given by the game engine.
     """
     global SHIP_COST, DROPOFF_COST, MAX_HALITE, MAX_TURNS
-    global EXTRACT_RATIO, MOVE_COST_RATIO
+    global EXTRACT_RATIO, EXTRACT_MULTIPLIER, MOVE_COST_RATIO
     global INSPIRATION_ENABLED, INSPIRATION_RADIUS, INSPIRATION_SHIP_COUNT
-    global INSPIRED_EXTRACT_RATIO, INSPIRED_BONUS_MULTIPLIER, INSPIRED_MOVE_COST_RATIO
+    global INSPIRED_EXTRACT_RATIO, INSPIRED_EXTRACT_MULTIPLIER, INSPIRED_BONUS_MULTIPLIER, INSPIRED_MOVE_COST_RATIO
     global CAPTURE_ENABLED, CAPTURE_RADIUS, CAPTURE_SHIP_ADVANTAGE
 
     """The cost to build a single ship."""
@@ -60,6 +62,7 @@ def load_constants(constants):
 
     """1/EXTRACT_RATIO halite (truncated) is collected from a square per turn."""
     EXTRACT_RATIO = constants['EXTRACT_RATIO']
+    EXTRACT_MULTIPLIER = 1 / EXTRACT_RATIO
 
     """1/MOVE_COST_RATIO halite (truncated) is needed to move off a cell."""
     MOVE_COST_RATIO = constants['MOVE_COST_RATIO']
@@ -81,6 +84,7 @@ def load_constants(constants):
 
     """An inspired ship mines 1/X halite from a cell per turn instead."""
     INSPIRED_EXTRACT_RATIO = constants['INSPIRED_EXTRACT_RATIO']
+    INSPIRED_EXTRACT_MULTIPLIER = 1 / INSPIRED_EXTRACT_RATIO
 
     """An inspired ship that removes Y halite from a cell collects X*Y additional halite."""
     INSPIRED_BONUS_MULTIPLIER = constants['INSPIRED_BONUS_MULTIPLIER']
