@@ -109,9 +109,10 @@ class IncomeEstimation:
                           bonus_multiplier):
         t = 0
         while space_left > 0 and halite_on_ground > 0:
-            hpt = IncomeEstimation.hpt_of(TURNS_REMAINING - t, 0, turns_to_dropoff, constants.MAX_HALITE - space_left,
+            halite = constants.MAX_HALITE - space_left
+            hpt = IncomeEstimation.hpt_of(TURNS_REMAINING - t, 0, turns_to_dropoff, halite,
                                           space_left, halite_on_ground * bonus_multiplier)
-            if hpt < runner_up_assignment[0]:
+            if hpt < runner_up_assignment[0] or hpt < halite / (turns_to_dropoff + 1):
                 return t, halite_on_ground
 
             extracted = min(ceil(halite_on_ground * extract_multiplier), space_left)
@@ -144,11 +145,11 @@ class ResourceAllocation:
         # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
-        runner_ups = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
+        mining_times = [0 for i in range(N)]
         scheduled = [False] * N
 
         if ENDGAME:
-            return goals, [], [], runner_ups
+            return goals, mining_times, [], []
 
         unscheduled = list(range(N))
 
@@ -168,13 +169,12 @@ class ResourceAllocation:
             unscheduled.remove(i)
             i_assignments = [a for a in assignments if a[1] == i]
             assignments = [a for a in assignments if a[1] != i]
-            mining_time, halite_on_ground = IncomeEstimation.time_spent_mining(
-                DROPOFF_DIST_BY_POS[pos], constants.MAX_HALITE - SHIPS[i].halite_amount,
-                halite_by_pos.get(pos, MAP[pos].halite_amount), i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos],
-                BONUS_MULTIPLIER_BY_POS[pos])
+            mining_times[i], halite_on_ground = IncomeEstimation.time_spent_mining(
+                DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
+                i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
             if goals[i] not in DROPOFFS:
                 scheduled_positions.add(pos)
-                reservations_by_pos[pos] += mining_time
+                reservations_by_pos[pos] += mining_times[i]
                 halite_by_pos[pos] = halite_on_ground
 
             inspired_halite_on_ground = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
@@ -182,15 +182,11 @@ class ResourceAllocation:
                 if a[2] == pos:
                     id = a[1]
                     new_hpt = IncomeEstimation.hpt_of(
-                        TURNS_REMAINING, MAP.dist(SHIPS[id].pos, pos), DROPOFF_DIST_BY_POS[pos],
-                        SHIPS[id].halite_amount, constants.MAX_HALITE - SHIPS[id].halite_amount,
-                        inspired_halite_on_ground)
+                        TURNS_REMAINING - reservations_by_pos[pos],
+                        MAP.dist(SHIPS[id].pos, pos) + reservations_by_pos[pos], DROPOFF_DIST_BY_POS[pos],
+                        SHIPS[id].halite_amount, SHIPS[id].space_left, inspired_halite_on_ground)
                     assignments[j] = (new_hpt, a[1], a[2])
             assignments.sort(reverse=True)
-
-        for i in range(N):
-            free_assignments = filter(lambda a: a[2] not in scheduled_positions, assignments_for_ship[i])
-            runner_ups[i] = sorted(free_assignments, reverse=True)[0]
 
         log('gathering potential dropoffs')
         score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals, dropoff_radius)
@@ -213,7 +209,7 @@ class ResourceAllocation:
                 log('chosen ship: {}'.format(SHIPS[i]))
                 goals[i] = None if SHIPS[i].pos == new_dropoff else new_dropoff
 
-        return goals, planned_dropoffs, costs, runner_ups
+        return goals, mining_times, planned_dropoffs, costs
 
     @staticmethod
     def assignments(unscheduled):
@@ -222,7 +218,7 @@ class ResourceAllocation:
         sxs = [SHIPS[i].pos[0] for i in unscheduled]
         sys = [SHIPS[i].pos[1] for i in unscheduled]
         halites = [SHIPS[i].halite_amount for i in unscheduled]
-        spaces = [constants.MAX_HALITE - halites[i] for i in unscheduled]
+        spaces = [SHIPS[i].space_left for i in unscheduled]
         for p in MAP.positions:
             x, y = p
             halite_on_ground = MAP[p].halite_amount
@@ -294,7 +290,7 @@ class ResourceAllocation:
 
 class PathPlanning:
     @staticmethod
-    def next_positions_for(opponent_model, goals, runner_up_assignments, spawning):
+    def next_positions_for(opponent_model, goals, mining_times, spawning):
         current = [SHIPS[i].pos for i in range(N)]
         next_positions = [current[i] for i in range(N)]
         reservations_all = defaultdict(set)
@@ -325,11 +321,7 @@ class PathPlanning:
                 add_reservation(raw_pos, t, is_own=True)
             if planned and goals[i] not in DROPOFFS:
                 move_time = len(path)
-                mining_time, halite_left = IncomeEstimation.time_spent_mining(
-                    DROPOFF_DIST_BY_POS[goals[i]], constants.MAX_HALITE - SHIPS[i].halite_amount,
-                    MAP[goals[i]].halite_amount, runner_up_assignments[i], EXTRACT_MULTIPLIER_BY_POS[goals[i]],
-                    BONUS_MULTIPLIER_BY_POS[goals[i]])
-                for t in range(move_time, move_time + mining_time):
+                for t in range(move_time, move_time + mining_times[i]):
                     add_reservation(goals[i], t, is_own=True)
             next_positions[i] = path[1][0]
             scheduled[i] = True
@@ -628,7 +620,7 @@ class Commander:
         self.opponent_model.update_all()
         log('Updated opponent model')
 
-        goals, planned_dropoffs, costs, runner_up_assignments = ResourceAllocation.goals_for_ships()
+        goals, mining_times, planned_dropoffs, costs = ResourceAllocation.goals_for_ships()
         log('allocated goals: {}'.format(goals))
 
         halite_available = ME.halite_amount
@@ -639,7 +631,7 @@ class Commander:
             spawning = True
             log('spawning')
 
-        next_positions = PathPlanning.next_positions_for(self.opponent_model, goals, runner_up_assignments, spawning)
+        next_positions = PathPlanning.next_positions_for(self.opponent_model, goals, mining_times, spawning)
         log('planned paths: {}'.format(next_positions))
 
         commands = []

@@ -62,6 +62,7 @@ class Ship(Entity):
     def __init__(self, owner, id, position, halite_amount):
         super().__init__(owner, id, position)
         self.halite_amount = halite_amount
+        self.space_left = constants.MAX_HALITE - self.halite_amount
 
     @property
     def is_full(self):
