@@ -137,12 +137,12 @@ class IncomeEstimation:
         # TODO take into account efficiency?
         # TODO take into account turns remaining?
         # TODO take into account number of other players? not working well in 4 player mode
-        halite_remaining = sum(map(MAP.halite_at, MAP.positions))
-        my_ships = len(SHIPS)
-        total_ships = len(OTHER_SHIPS) + my_ships
-        expected_halite = my_ships * halite_remaining / total_ships if total_ships > 0 else 0
-        expected_halite_1 = (my_ships + 1) * halite_remaining / (total_ships + 1)
-        halite_gained = expected_halite_1 - expected_halite
+        halite_gained = 0
+        for on in OPPONENT_NS:
+            opponent_halite = on * HALITE_REMAINING / TOTAL_N if TOTAL_N > 0 else 0
+            opponent_halite_1 = on * HALITE_REMAINING / (TOTAL_N + 1)
+            halite_gained += opponent_halite - opponent_halite_1
+        halite_gained /= constants.NUM_OPPONENTS
         return halite_gained - constants.SHIP_COST
 
 
@@ -351,11 +351,11 @@ class PathPlanning:
 
         for opponent_ship in OTHER_SHIPS:
             add_reservation(opponent_ship.pos, 0, is_own=False)
-            num_my_ships, num_opponent_ships = ships_around(opponent_ship.pos, ME.id, max_radius=8)
             # TODO roi of losing ship?
-            if num_my_ships <= num_opponent_ships:
-                for next_pos in opponent_model.get_next_positions_for(opponent_ship):
-                    add_reservation(next_pos, 1, is_own=False)
+            # num_my_ships, num_opponent_ships = ships_around(opponent_ship.pos, ME.id, max_radius=8)
+            # if num_my_ships <= num_opponent_ships:
+            for next_pos in opponent_model.get_next_positions_for(opponent_ship):
+                add_reservation(next_pos, 1, is_own=False)
 
         log('converting dropoffs')
         for i in range(N):
@@ -585,7 +585,7 @@ class Commander:
         log('Turn took {}'.format((datetime.now() - start_time).total_seconds()))
 
     def update_globals(self):
-        global GAME, MAP, ME, OTHER_PLAYERS, TURNS_REMAINING, ENDGAME, SHIPS, N, OTHER_SHIPS
+        global GAME, MAP, ME, OTHER_PLAYERS, TURNS_REMAINING, ENDGAME, SHIPS, N, OTHER_SHIPS, OPPONENT_NS, TOTAL_N
         global DROPOFFS, OPPONENT_DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
         global OPPONENTS_AROUND, ALLIES_AROUND, INSPIRED_BY_POS, EXTRACT_MULTIPLIER_BY_POS, BONUS_MULTIPLIER_BY_POS
         global PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
@@ -598,8 +598,11 @@ class Commander:
         SHIPS = ME.get_ships()
         N = len(SHIPS)
         OTHER_SHIPS = []
+        OPPONENT_NS = []
         for other in OTHER_PLAYERS:
             OTHER_SHIPS.extend(other.get_ships())
+            OPPONENT_NS.append(len(other.get_ships()))
+        TOTAL_N = N + len(OTHER_SHIPS)
 
         OPPONENTS_AROUND = defaultdict(int)
         ALLIES_AROUND = defaultdict(int)
@@ -707,6 +710,8 @@ ENDGAME = False
 SHIPS = []
 N = 0
 OTHER_SHIPS = []
+OPPONENT_NS = []
+TOTAL_N = 0
 
 DROPOFFS = []
 OPPONENT_DROPOFFS = []
