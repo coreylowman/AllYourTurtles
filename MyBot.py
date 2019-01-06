@@ -80,7 +80,8 @@ def get_halite_by_position():
 
 class IncomeEstimation:
     @staticmethod
-    def hpt_of(turns_remaining, turns_to_move, turns_to_dropoff, halite_on_board, space_left, halite_on_ground):
+    def hpt_of(turns_remaining, turns_to_move, turns_to_dropoff, halite_on_board, space_left, halite_on_ground,
+               inspiration_bonus):
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
         # TODO consider blocking opponent from dropoff
@@ -91,18 +92,24 @@ class IncomeEstimation:
             # TODO also add in value indicating hpt of creating a new ship
             # TODO discount if blocked?
             amount_gained = halite_on_board
+            inspiration_gained = 0
         else:
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
             amount_gained = halite_on_ground
             if amount_gained > space_left:
                 amount_gained = space_left
+            space_left -= amount_gained
+            inspiration_gained = inspiration_bonus
+            if inspiration_gained > space_left:
+                inspiration_gained = space_left
 
-        collect_hpt = amount_gained / (turns_to_move + 1)
+        collect_hpt = (amount_gained / (turns_to_move + 1)) ** constants.NUM_PLAYERS
+        inspiration_hpt = (inspiration_gained / (turns_to_move + 1)) ** COLLECTED_WEIGHT
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
-        return collect_hpt + dropoff_bonus
+        return collect_hpt + inspiration_hpt + dropoff_bonus
 
     @staticmethod
     def time_spent_mining(turns_to_dropoff, space_left, halite_on_ground, runner_up_assignment, extract_multiplier,
@@ -111,14 +118,14 @@ class IncomeEstimation:
         while space_left > 0 and halite_on_ground > 0:
             halite = constants.MAX_HALITE - space_left
             hpt = IncomeEstimation.hpt_of(TURNS_REMAINING - t, 0, turns_to_dropoff, halite,
-                                          space_left, halite_on_ground * bonus_multiplier)
+                                          space_left, halite_on_ground, halite_on_ground * bonus_multiplier)
             if hpt < runner_up_assignment[0] or hpt < halite / (turns_to_dropoff + 1):
                 return t, halite_on_ground
 
             extracted = min(ceil(halite_on_ground * extract_multiplier), space_left)
             halite_on_ground -= extracted
 
-            extracted *= bonus_multiplier
+            extracted *= 1 + bonus_multiplier
             space_left = max(space_left - extracted, 0)
             t += 1
 
@@ -177,14 +184,14 @@ class ResourceAllocation:
                 reservations_by_pos[pos] += mining_times[i]
                 halite_by_pos[pos] = halite_on_ground
 
-            inspired_halite_on_ground = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
+            inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
             for j, a in enumerate(assignments):
                 if a[2] == pos:
                     id = a[1]
                     new_hpt = IncomeEstimation.hpt_of(
                         TURNS_REMAINING - reservations_by_pos[pos],
                         MAP.dist(SHIPS[id].pos, pos) + reservations_by_pos[pos], DROPOFF_DIST_BY_POS[pos],
-                        SHIPS[id].halite_amount, SHIPS[id].space_left, inspired_halite_on_ground)
+                        SHIPS[id].halite_amount, SHIPS[id].space_left, halite_on_ground, inspiration_bonus)
                     assignments[j] = (new_hpt, a[1], a[2])
             assignments.sort(reverse=True)
 
@@ -230,12 +237,13 @@ class ResourceAllocation:
         for p in MAP.positions:
             x, y = p
             halite_on_ground = MAP[p].halite_amount
-            inspired_halite_on_ground = halite_on_ground * BONUS_MULTIPLIER_BY_POS[p]
+            inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[p]
             dropoff_dist = DROPOFF_DIST_BY_POS[p]
+            difficulty = DIFFICULTY[p]
             for i in unscheduled:
-                d = MAP.distance_table[sxs[i] - x] + MAP.distance_table[sys[i] - y]
+                d = MAP.distance_table[sxs[i] - x] + MAP.distance_table[sys[i] - y] + difficulty
                 hpt = IncomeEstimation.hpt_of(TURNS_REMAINING, d, dropoff_dist, halites[i], spaces[i],
-                                              inspired_halite_on_ground)
+                                              halite_on_ground, inspiration_bonus)
                 assignments_for_ship[i].append((hpt, i, p))
 
         log('getting n largest assignments')
@@ -580,6 +588,7 @@ class Commander:
         global GAME, MAP, ME, OTHER_PLAYERS, TURNS_REMAINING, ENDGAME, SHIPS, N, OTHER_SHIPS
         global DROPOFFS, OPPONENT_DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
         global OPPONENTS_AROUND, ALLIES_AROUND, INSPIRED_BY_POS, EXTRACT_MULTIPLIER_BY_POS, BONUS_MULTIPLIER_BY_POS
+        global PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
 
         log('Updating data...')
 
@@ -609,17 +618,27 @@ class Commander:
             for drp in player.get_dropoffs():
                 OPPONENT_DROPOFFS.append(drp.pos)
 
+        halite = 0
         for pos in MAP.positions:
             drp = min(DROPOFFS, key=lambda drp: MAP.dist(drp, pos))
             drp_dist = MAP.dist(pos, drp)
             inspired = OPPONENTS_AROUND[pos] >= constants.INSPIRATION_SHIP_COUNT
             extract = constants.INSPIRED_EXTRACT_MULTIPLIER if inspired else constants.EXTRACT_MULTIPLIER
-            bonus = 1 + constants.INSPIRED_BONUS_MULTIPLIER if inspired else 1
+            bonus = constants.INSPIRED_BONUS_MULTIPLIER if inspired else 0
             DROPOFF_BY_POS[pos] = drp
             DROPOFF_DIST_BY_POS[pos] = drp_dist
             INSPIRED_BY_POS[pos] = inspired
             EXTRACT_MULTIPLIER_BY_POS[pos] = extract
             BONUS_MULTIPLIER_BY_POS[pos] = bonus
+            DIFFICULTY[pos] = 0
+            halite += MAP[pos].halite_amount
+        PCT_REMAINING = halite / TOTAL_HALITE
+        PCT_COLLECTED = 1 - PCT_REMAINING
+        REMAINING_WEIGHT = constants.NUM_OPPONENTS * PCT_REMAINING + 1
+        COLLECTED_WEIGHT = constants.NUM_OPPONENTS * PCT_COLLECTED + 1
+
+        for drp in DROPOFFS:
+            DIFFICULTY[drp] = OPPONENTS_AROUND[drp]
 
         SHIPS = sorted(SHIPS,
                        key=lambda ship: (DROPOFF_DIST_BY_POS[ship.pos], -ship.halite_amount, ship.id))
@@ -699,5 +718,14 @@ ALLIES_AROUND = {}
 INSPIRED_BY_POS = {}
 EXTRACT_MULTIPLIER_BY_POS = {}
 BONUS_MULTIPLIER_BY_POS = {}
+DIFFICULTY = {}
+
+SIZE = constants.WIDTH * constants.HEIGHT
+TOTAL_HALITE = sum(MAP[p].halite_amount for p in MAP.positions)
+HALITE_REMAINING = TOTAL_HALITE
+PCT_REMAINING = HALITE_REMAINING / TOTAL_HALITE
+PCT_COLLECTED = 1 - PCT_REMAINING
+REMAINING_WEIGHT = constants.NUM_OPPONENTS * PCT_REMAINING + 1
+COLLECTED_WEIGHT = constants.NUM_OPPONENTS * PCT_COLLECTED + 1
 
 main()
