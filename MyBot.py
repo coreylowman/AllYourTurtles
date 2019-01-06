@@ -194,6 +194,7 @@ class ResourceAllocation:
         log(goals_by_dropoff)
 
         planned_dropoffs = []
+        scheduled_dropoffs = []
         costs = []
         ships_for_dropoffs = set(range(N))
         if N > 10:
@@ -203,11 +204,18 @@ class ResourceAllocation:
                 log('dropoff position: {}'.format(new_dropoff))
 
                 i = min(ships_for_dropoffs, key=lambda i: MAP.dist(SHIPS[i].pos, new_dropoff))
-                ships_for_dropoffs.remove(i)
                 costs.append(constants.DROPOFF_COST - SHIPS[i].halite_amount - MAP[new_dropoff].halite_amount)
 
-                log('chosen ship: {}'.format(SHIPS[i]))
-                goals[i] = None if SHIPS[i].pos == new_dropoff else new_dropoff
+                if ME.halite_amount >= costs[-1]:
+                    log('chosen ship: {}'.format(SHIPS[i]))
+                    goals[i] = None if SHIPS[i].pos == new_dropoff else new_dropoff
+                    ships_for_dropoffs.remove(i)
+                    scheduled_dropoffs.append(new_dropoff)
+
+        for drp in scheduled_dropoffs:
+            for i in ships_for_dropoffs:
+                if goals[i] in DROPOFFS and MAP.dist(drp, SHIPS[i].pos) < DROPOFF_DIST_BY_POS[SHIPS[i].pos]:
+                    goals[i] = drp
 
         return goals, mining_times, planned_dropoffs, costs
 
@@ -304,7 +312,11 @@ class PathPlanning:
         def add_reservation(pos, time, is_own):
             # if not a dropoff, just add
             # if is a dropoff, add if enemy is reserving or if not endgame
-            if pos not in DROPOFFS or not is_own or TURNS_REMAINING - time > constants.WIDTH:
+            if pos in DROPOFFS:
+                if not ENDGAME and is_own:
+                    reservations_all[time].add(pos)
+                    reservations_self[time].add(pos)
+            else:
                 reservations_all[time].add(pos)
                 if is_own:
                     reservations_self[time].add(pos)
@@ -468,7 +480,7 @@ class PathPlanning:
 
 
 class OpponentModel:
-    def __init__(self, n=5):
+    def __init__(self, n=10):
         self._n = n
         self._pos_by_ship = {}
         self._moves_by_ship = {}
@@ -566,7 +578,7 @@ class Commander:
 
     def update_globals(self):
         global GAME, MAP, ME, OTHER_PLAYERS, TURNS_REMAINING, ENDGAME, SHIPS, N, OTHER_SHIPS
-        global DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
+        global DROPOFFS, OPPONENT_DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
         global OPPONENTS_AROUND, ALLIES_AROUND, INSPIRED_BY_POS, EXTRACT_MULTIPLIER_BY_POS, BONUS_MULTIPLIER_BY_POS
 
         log('Updating data...')
@@ -590,6 +602,12 @@ class Commander:
                 OPPONENTS_AROUND[p] += 1
 
         DROPOFFS = [ME.shipyard.pos] + [drp.pos for drp in ME.get_dropoffs()]
+
+        OPPONENT_DROPOFFS = []
+        for player in OTHER_PLAYERS:
+            OPPONENT_DROPOFFS.append(player.shipyard.pos)
+            for drp in player.get_dropoffs():
+                OPPONENT_DROPOFFS.append(drp.pos)
 
         for pos in MAP.positions:
             drp = min(DROPOFFS, key=lambda drp: MAP.dist(drp, pos))
@@ -672,6 +690,7 @@ N = 0
 OTHER_SHIPS = []
 
 DROPOFFS = []
+OPPONENT_DROPOFFS = []
 DROPOFF_BY_POS = {}
 DROPOFF_DIST_BY_POS = {}
 
