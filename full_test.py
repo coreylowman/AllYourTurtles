@@ -41,7 +41,7 @@ def run_game(size, opponents, bot, seed=None):
 delta_by_config = {}
 
 for opponents in [
-    # 1,
+    1,
     3
 ]:
     for size in [
