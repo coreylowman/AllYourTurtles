@@ -137,12 +137,9 @@ class IncomeEstimation:
         # TODO take into account efficiency?
         # TODO take into account turns remaining?
         # TODO take into account number of other players? not working well in 4 player mode
-        halite_gained = 0
-        for on in OPPONENT_NS:
-            opponent_halite = on * HALITE_REMAINING / TOTAL_N if TOTAL_N > 0 else 0
-            opponent_halite_1 = on * HALITE_REMAINING / (TOTAL_N + 1)
-            halite_gained += opponent_halite - opponent_halite_1
-        halite_gained /= constants.NUM_OPPONENTS
+        expected_halite = N * HALITE_REMAINING / TOTAL_N if TOTAL_N > 0 else 0
+        expected_halite_1 = (N + 1) * HALITE_REMAINING / (TOTAL_N + 1)
+        halite_gained = expected_halite_1 - expected_halite
         return halite_gained - constants.SHIP_COST
 
 
@@ -352,10 +349,9 @@ class PathPlanning:
         for opponent_ship in OTHER_SHIPS:
             add_reservation(opponent_ship.pos, 0, is_own=False)
             # TODO roi of losing ship?
-            # num_my_ships, num_opponent_ships = ships_around(opponent_ship.pos, ME.id, max_radius=8)
-            # if num_my_ships <= num_opponent_ships:
-            for next_pos in opponent_model.get_next_positions_for(opponent_ship):
-                add_reservation(next_pos, 1, is_own=False)
+            if ALLIES_AROUND[opponent_ship.pos] <= OPPONENTS_AROUND[opponent_ship.pos]:
+                for next_pos in opponent_model.get_next_positions_for(opponent_ship):
+                    add_reservation(next_pos, 1, is_own=False)
 
         log('converting dropoffs')
         for i in range(N):
