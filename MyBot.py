@@ -63,6 +63,14 @@ def ships_around(p, owner, max_radius):
     return ships, other_ships
 
 
+def opponent_halite_next_to(p):
+    halite = 0
+    for p in pos_around(p, 1):
+        if MAP[p].ship is not None and MAP[p].ship.owner != ME.id:
+            halite += MAP[p].ship.halite_amount
+    return halite
+
+
 def centroid(positions):
     total = [0, 0]
     for p in positions:
@@ -145,7 +153,7 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(dropoff_radius=8):
+    def goals_for_ships(opponent_next_positions, dropoff_radius=8):
         # TODO if we have way more ships than opponent ATTACK
         scheduled_positions = set()
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
@@ -178,8 +186,14 @@ class ResourceAllocation:
                 i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
             if goals[i] not in DROPOFFS:
                 scheduled_positions.add(pos)
-                reservations_by_pos[pos] += mining_times[i]
-                halite_by_pos[pos] = halite_on_ground
+                if pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
+                    reservations_by_pos[pos] += 0
+                    halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
+                    halite_by_pos[pos] += SHIPS[i].halite_amount
+                    halite_by_pos[pos] += opponent_halite_next_to(pos)
+                else:
+                    reservations_by_pos[pos] += mining_times[i]
+                    halite_by_pos[pos] = halite_on_ground
 
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
             for j, a in enumerate(assignments):
@@ -657,7 +671,8 @@ class Commander:
         self.opponent_model.update_all()
         log('Updated opponent model')
 
-        goals, mining_times, planned_dropoffs, costs = ResourceAllocation.goals_for_ships()
+        goals, mining_times, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(
+            self.opponent_model.get_next_positions())
         log('allocated goals: {}'.format(goals))
 
         halite_available = ME.halite_amount
