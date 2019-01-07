@@ -104,8 +104,8 @@ class IncomeEstimation:
             if inspiration_gained > space_left:
                 inspiration_gained = space_left
 
-        collect_hpt = (amount_gained / (turns_to_move + 1)) ** constants.NUM_PLAYERS
-        inspiration_hpt = (inspiration_gained / (turns_to_move + 1)) ** COLLECTED_WEIGHT
+        collect_hpt = amount_gained / (turns_to_move + 1)
+        inspiration_hpt = inspiration_gained / (turns_to_move + 1)
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
