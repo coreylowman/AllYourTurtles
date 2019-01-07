@@ -7,10 +7,41 @@ def extract_halite(line):
     return int(line.split(' ')[-2])
 
 
+def run_game(size, opponents, bot, seed=None):
+    if seed is None:
+        seed = ''
+    else:
+        seed = '-s ' + seed
+    output = subprocess.check_output(
+        'halite.exe {} -vvv --no-logs --width {} --height {} {} {}'.format(
+            seed, size, size, bot, '"python MyBot_last.py" ' * opponents),
+        stderr=subprocess.STDOUT,
+        shell=True,
+    )
+
+    output = output.decode('utf-8')
+    if '[error]' in output:
+        raise ValueError(output)
+
+    # print(output)
+    lines = output.splitlines()
+    seed = lines[0].split(' ')[-1]
+
+    i = 0
+    while True:
+        if lines[i].startswith('[info] Opening a file at'):
+            break
+        i += 1
+
+    players = opponents + 1
+    results = lines[i + 1:i + 1 + players]
+    return seed, results
+
+
 delta_by_config = {}
 
 for opponents in [
-    1,
+    # 1,
     3
 ]:
     for size in [
@@ -20,30 +51,17 @@ for opponents in [
         56,
         64
     ]:
-        deltas = []
-        for i in range(5):
-            output = subprocess.check_output(
-                'halite.exe -vvv --no-logs --width {} --height {} "python MyBot.py" {}'.format(
-                    size, size, '"python MyBot_last.py" ' * opponents),
-                stderr=subprocess.STDOUT,
-                shell=True,
-            )
+        for _ in range(5):
+            print(datetime.datetime.now(), 1 + opponents, size)
 
-            output = output.decode('utf-8')
-            if '[error]' in output:
-                raise ValueError(output)
+            seed_new, results_new = run_game(size, opponents, '"python MyBot.py"', seed=None)
+            halite = extract_halite(results_new[0])
+            opponents_halite = list(map(extract_halite, results_new[1:]))
+            ds_new = [halite - oh for oh in opponents_halite]
+            print('\tnew:', ds_new)
 
-            # print(output)
-            lines = output.splitlines()
-            for i, line in enumerate(lines):
-                if line.startswith('[info] Opening a file at'):
-                    break
-
-            players = opponents + 1
-            results = lines[i + 1:i + 1 + players]
-            halite = extract_halite(results[0])
-            opponents_halite = list(map(extract_halite, results[1:]))
-            ds = [halite - oh for oh in opponents_halite]
-            deltas.extend(ds)
-            print(datetime.datetime.now(), players, size, ds)
-        print(mean(deltas))
+            seed_old, results_old = run_game(size, opponents, '"python MyBot_last.py"', seed=seed_new)
+            halite = extract_halite(results_old[0])
+            opponents_halite = list(map(extract_halite, results_old[1:]))
+            ds_old = [halite - oh for oh in opponents_halite]
+            print('\told:', ds_old)
