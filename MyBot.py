@@ -104,8 +104,8 @@ class IncomeEstimation:
             if inspiration_gained > space_left:
                 inspiration_gained = space_left
 
-        collect_hpt = amount_gained / (turns_to_move + 1)
-        inspiration_hpt = inspiration_gained / (turns_to_move + 1)
+        collect_hpt = (amount_gained / (turns_to_move + 1)) ** constants.NUM_PLAYERS
+        inspiration_hpt = (inspiration_gained / (turns_to_move + 1)) ** COLLECTED_WEIGHT
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
@@ -584,7 +584,7 @@ class Commander:
         global GAME, MAP, ME, OTHER_PLAYERS, TURNS_REMAINING, ENDGAME, SHIPS, N, OTHER_SHIPS, OPPONENT_NS, TOTAL_N
         global DROPOFFS, OPPONENT_DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
         global OPPONENTS_AROUND, ALLIES_AROUND, INSPIRED_BY_POS, EXTRACT_MULTIPLIER_BY_POS, BONUS_MULTIPLIER_BY_POS
-        global PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
+        global HALITE_REMAINING, PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
 
         log('Updating data...')
 
@@ -631,6 +631,7 @@ class Commander:
             BONUS_MULTIPLIER_BY_POS[pos] = bonus
             DIFFICULTY[pos] = 0
             halite += MAP[pos].halite_amount
+        HALITE_REMAINING = halite
         PCT_REMAINING = halite / TOTAL_HALITE
         PCT_COLLECTED = 1 - PCT_REMAINING
         REMAINING_WEIGHT = constants.NUM_OPPONENTS + PCT_REMAINING
