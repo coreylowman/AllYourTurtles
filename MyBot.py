@@ -390,6 +390,8 @@ class PathPlanning:
             if current[i] == goals[i]:
                 plan_path(i)
 
+        # TODO plan those with conflicts first
+
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
         for i in unscheduled:
@@ -659,9 +661,14 @@ class Commander:
 
         log('Updated data')
 
-    def should_make_ship(self):
+    def should_make_ship(self, goals):
         if ENDGAME:
             return False
+
+        for i in range(N):
+            if MAP.dist(SHIPS[i].pos, ME.shipyard.pos) == 1 and goals[i] == ME.shipyard.pos:
+                return False
+
         my_produced = len(ME.ships_produced)
         opponent_produced = ceil(mean([len(other.ships_produced) for other in OTHER_PLAYERS]))
         roi = IncomeEstimation.roi()
@@ -678,7 +685,7 @@ class Commander:
         halite_available = ME.halite_amount
         spawning = False
         if halite_available >= constants.SHIP_COST and halite_available - sum(
-                costs) >= constants.SHIP_COST and self.should_make_ship():
+                costs) >= constants.SHIP_COST and self.should_make_ship(goals):
             halite_available -= constants.SHIP_COST
             spawning = True
             log('spawning')
