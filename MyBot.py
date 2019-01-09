@@ -380,8 +380,7 @@ class PathPlanning:
         for i in unscheduled:
             cost = MAP[current[i]].halite_amount / constants.MOVE_COST_RATIO
             if cost > SHIPS[i].halite_amount:
-                add_reservation(current[i], 1, is_own=True)
-                scheduled[i] = True
+                plan_path(i)
 
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
@@ -467,6 +466,7 @@ class PathPlanning:
                 if npt in closed_set or (nt < window and neighbor in reservation_table[nt]):
                     continue
 
+                # TODO make dist actual dist, add new score for cost, and use cost to break ties
                 cost = 0 if current == neighbor else move_cost
                 dist = cost + 1
                 g = g_score[cpt] + dist
