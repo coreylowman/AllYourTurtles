@@ -40,16 +40,16 @@ def run_game(size, opponents, bot, seed=None):
 
 delta_by_config = {}
 
-for opponents in [
-    1,
-    3
+for size in [
+    32,
+    40,
+    48,
+    56,
+    64
 ]:
-    for size in [
-        32,
-        40,
-        48,
-        56,
-        64
+    for opponents in [
+        1,
+        3
     ]:
         for _ in range(5):
             print(datetime.datetime.now(), 1 + opponents, size)
