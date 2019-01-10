@@ -9,7 +9,7 @@ from datetime import datetime
 import logging
 from collections import defaultdict
 import math
-from math import ceil
+from math import ceil, floor
 from statistics import mean
 from heapq import nlargest
 
@@ -378,7 +378,7 @@ class PathPlanning:
 
         log('locking stills')
         for i in unscheduled:
-            cost = MAP[current[i]].halite_amount / constants.MOVE_COST_RATIO
+            cost = floor(MAP[current[i]].halite_amount / constants.MOVE_COST_RATIO)
             if cost > SHIPS[i].halite_amount:
                 add_reservation(current[i], 1, is_own=True)
                 scheduled[i] = True
@@ -417,6 +417,8 @@ class PathPlanning:
         if start == goal and goal not in reservation_table[1]:
             return [(start, 0), (goal, 1)]
 
+        max_cost = floor(max_halite / constants.MOVE_COST_RATIO)
+
         closed_set = set()
         open_set = set()
         g_score = defaultdict(lambda: math.inf)
@@ -434,7 +436,7 @@ class PathPlanning:
         extractions_at[(start, 0)] = []
 
         while len(open_set) > 0:
-            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt], -halite_at[pt]))
+            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt]))
             current, t = cpt
 
             halite_left = halite_at[cpt]
@@ -452,13 +454,13 @@ class PathPlanning:
             open_set.remove(cpt)
             closed_set.add(cpt)
 
-            raw_move_cost = halite_on_ground / constants.MOVE_COST_RATIO
-            raw_extracted = halite_on_ground / constants.EXTRACT_RATIO
-            move_cost = halite_on_ground / max_halite
+            raw_move_cost = floor(halite_on_ground / constants.MOVE_COST_RATIO)
+            raw_extracted = ceil(halite_on_ground / constants.EXTRACT_RATIO)
+            move_cost = raw_move_cost / max_cost
             nt = t + 1
 
             neighbors = [current]
-            if halite_on_ground / constants.MOVE_COST_RATIO <= halite_left:
+            if raw_move_cost <= halite_left:
                 neighbors.extend(cardinal_neighbors(current))
 
             for neighbor in neighbors:
