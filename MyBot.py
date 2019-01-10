@@ -380,7 +380,8 @@ class PathPlanning:
         for i in unscheduled:
             cost = MAP[current[i]].halite_amount / constants.MOVE_COST_RATIO
             if cost > SHIPS[i].halite_amount:
-                plan_path(i)
+                add_reservation(current[i], 1, is_own=True)
+                scheduled[i] = True
 
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
@@ -433,7 +434,7 @@ class PathPlanning:
         extractions_at[(start, 0)] = []
 
         while len(open_set) > 0:
-            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt]))
+            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt], pt[1]))
             current, t = cpt
 
             halite_left = halite_at[cpt]
