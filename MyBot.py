@@ -434,7 +434,7 @@ class PathPlanning:
         extractions_at[(start, 0)] = []
 
         while len(open_set) > 0:
-            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt], pt[1]))
+            cpt = min(open_set, key=lambda pt: (f_score[pt], h_score[pt], -halite_at[pt]))
             current, t = cpt
 
             halite_left = halite_at[cpt]
