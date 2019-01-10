@@ -446,7 +446,7 @@ class PathPlanning:
                 if pos == current:
                     halite_on_ground -= amt
 
-            if current == goal and current not in reservation_table[t] and t > 0:
+            if current == goal and not (t < window and current in reservation_table[t]) and t > 0:
                 return PathPlanning._reconstruct_path(came_from, cpt)
 
             # log('- Expanding {} at {}. f={}'.format(current, t, f_score[cpt]))
