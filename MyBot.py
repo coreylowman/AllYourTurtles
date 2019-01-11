@@ -191,7 +191,7 @@ class ResourceAllocation:
                     halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
                     halite_by_pos[pos] += SHIPS[i].halite_amount
                     halite_by_pos[pos] += opponent_halite_next_to(pos)
-                    halite_on_ground = halite_by_pos[pos]
+                    # halite_on_ground = halite_by_pos[pos]
                 else:
                     reservations_by_pos[pos] += mining_times[i]
                     halite_by_pos[pos] = halite_on_ground
@@ -373,7 +373,7 @@ class PathPlanning:
             if goals[i] is None:
                 scheduled[i] = True
                 next_positions[i] = None
-                add_reservation(current[i], 1, is_own=True)
+                # add_reservation(current[i], 1, is_own=True)
 
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
