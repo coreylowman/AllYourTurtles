@@ -187,10 +187,11 @@ class ResourceAllocation:
             if goals[i] not in DROPOFFS:
                 scheduled_positions.add(pos)
                 if pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
-                    reservations_by_pos[pos] += 0
+                    reservations_by_pos[pos] += 1
                     halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
                     halite_by_pos[pos] += SHIPS[i].halite_amount
                     halite_by_pos[pos] += opponent_halite_next_to(pos)
+                    halite_on_ground = halite_by_pos[pos]
                 else:
                     reservations_by_pos[pos] += mining_times[i]
                     halite_by_pos[pos] = halite_on_ground
