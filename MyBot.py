@@ -12,6 +12,7 @@ import math
 from math import ceil, floor
 from statistics import mean
 from heapq import nlargest
+from itertools import combinations
 
 
 def log(s):
@@ -155,7 +156,6 @@ class ResourceAllocation:
     @staticmethod
     def goals_for_ships(opponent_next_positions, dropoff_radius=8):
         # TODO if we have way more ships than opponent ATTACK
-        scheduled_positions = set()
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
         mining_times = [0 for i in range(N)]
         scheduled = [False] * N
@@ -172,7 +172,7 @@ class ResourceAllocation:
         assignments.sort(reverse=True)
 
         log('gathering assignments')
-        reservations_by_pos = defaultdict(int)
+        next_time_free_by_pos = defaultdict(int)
         halite_by_pos = {}
         while len(assignments) > 0:
             hpt, i, pos = assignments[0]
@@ -184,26 +184,29 @@ class ResourceAllocation:
             mining_times[i], halite_on_ground = IncomeEstimation.time_spent_mining(
                 DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
                 i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
-            if goals[i] not in DROPOFFS:
-                scheduled_positions.add(pos)
-                if pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
-                    reservations_by_pos[pos] += 0
-                    halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
-                    halite_by_pos[pos] += SHIPS[i].halite_amount
-                    halite_by_pos[pos] += opponent_halite_next_to(pos)
-                else:
-                    reservations_by_pos[pos] += mining_times[i]
-                    halite_by_pos[pos] = halite_on_ground
+
+            if goals[i] not in DROPOFFS and pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
+                # might collide
+                halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
+                halite_by_pos[pos] += SHIPS[i].halite_amount
+                halite_by_pos[pos] += opponent_halite_next_to(pos)
+            else:
+                next_time_free_by_pos[pos] += mining_times[i] + 1
+                halite_by_pos[pos] = halite_on_ground
 
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            for j, a in enumerate(assignments):
-                if a[2] == pos:
-                    id = a[1]
+            for j, (a_hpt, a_i, a_pos) in enumerate(assignments):
+                if a_pos == pos:
+                    time_arrived = MAP.dist(SHIPS[a_i].pos, pos)
+                    time_free = next_time_free_by_pos[pos]
+                    wait_time = time_free - time_arrived
+                    if wait_time < 0:
+                        wait_time = 0
                     new_hpt = IncomeEstimation.hpt_of(
-                        TURNS_REMAINING - reservations_by_pos[pos],
-                        MAP.dist(SHIPS[id].pos, pos) + reservations_by_pos[pos], DROPOFF_DIST_BY_POS[pos],
-                        SHIPS[id].halite_amount, SHIPS[id].space_left, halite_on_ground, inspiration_bonus)
-                    assignments[j] = (new_hpt, a[1], a[2])
+                        TURNS_REMAINING - wait_time,
+                        MAP.dist(SHIPS[a_i].pos, pos) + wait_time, DROPOFF_DIST_BY_POS[pos],
+                        SHIPS[a_i].halite_amount, SHIPS[a_i].space_left, halite_on_ground, inspiration_bonus)
+                    assignments[j] = (new_hpt, a_i, a_pos)
             assignments.sort(reverse=True)
 
         log('gathering potential dropoffs')
