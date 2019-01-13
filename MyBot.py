@@ -419,6 +419,8 @@ class PathPlanning:
             return [(start, 0), (goal, 1)]
 
         max_cost = floor(max_halite / constants.MOVE_COST_RATIO)
+        if max_cost == 0:
+            max_cost = 1
 
         closed_set = set()
         open_set = set()
