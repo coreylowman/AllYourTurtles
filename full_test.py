@@ -51,17 +51,23 @@ for size in [
         1,
         3
     ]:
-        for _ in range(5):
+        rank_changes = []
+        for _ in range(10):
             print(datetime.datetime.now(), 1 + opponents, size)
 
             seed_new, results_new = run_game(size, opponents, '"python MyBot.py"', seed=None)
             halite = extract_halite(results_new[0])
             opponents_halite = list(map(extract_halite, results_new[1:]))
             ds_new = [halite - oh for oh in opponents_halite]
-            print('\tnew:', ds_new)
+            rank_new = sum(int(d > 0) for d in ds_new)
+            print('\tnew:', ds_new, rank_new)
 
             seed_old, results_old = run_game(size, opponents, '"python MyBot_last.py"', seed=seed_new)
             halite = extract_halite(results_old[0])
             opponents_halite = list(map(extract_halite, results_old[1:]))
             ds_old = [halite - oh for oh in opponents_halite]
-            print('\told:', ds_old)
+            rank_old = sum(int(d > 0) for d in ds_old)
+            print('\told:', ds_old, rank_old)
+
+            rank_changes.append(rank_new - rank_old)
+            print('\t', mean(rank_changes))
