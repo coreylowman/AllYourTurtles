@@ -374,8 +374,9 @@ class PathPlanning:
             add_reservation(opponent_ship.pos, 0, is_own=False)
             # TODO roi of losing ship?
             for next_pos in opponent_model.get_next_positions_for(opponent_ship):
-                add_reservation(next_pos, 1, is_own=False,
-                                outnumbered=ALLIES_AROUND[next_pos] <= OPPONENTS_AROUND[next_pos])
+                for t in range(1, 9):
+                    add_reservation(next_pos, t, is_own=False,
+                                    outnumbered=ALLIES_AROUND[next_pos] <= OPPONENTS_AROUND[next_pos])
 
         log('converting dropoffs')
         for i in range(N):
