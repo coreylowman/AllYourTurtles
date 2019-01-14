@@ -322,27 +322,34 @@ class PathPlanning:
         current = [SHIPS[i].pos for i in range(N)]
         next_positions = [current[i] for i in range(N)]
         reservations_all = defaultdict(set)
+        reservations_outnumbered = defaultdict(set)
         reservations_self = defaultdict(set)
         scheduled = [False] * N
+        conflicts = [0] * N
 
         log('reserving other ship positions')
 
         max_halite = max(map(MAP.halite_at, MAP.positions))
 
-        def add_reservation(pos, time, is_own):
+        def add_reservation(pos, time, is_own, outnumbered=True):
             # if not a dropoff, just add
             # if is a dropoff, add if enemy is reserving or if not endgame
             if pos in DROPOFFS:
                 if not ENDGAME and is_own:
                     reservations_all[time].add(pos)
                     reservations_self[time].add(pos)
+                    if outnumbered:
+                        reservations_outnumbered[time].add(pos)
             else:
                 reservations_all[time].add(pos)
+                if outnumbered:
+                    reservations_outnumbered[time].add(pos)
                 if is_own:
                     reservations_self[time].add(pos)
 
         def plan_path(i):
-            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, reservations_all)
+            res = reservations_all if goals[i] in DROPOFFS else reservations_outnumbered
+            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, res)
             planned = True
             if path is None:
                 path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, reservations_self)
@@ -357,6 +364,8 @@ class PathPlanning:
                     add_reservation(goals[i], t, is_own=True)
             next_positions[i] = path[1][0]
             scheduled[i] = True
+            if next_positions[i] in current:
+                conflicts[current.index(next_positions[i])] += 1
 
         if spawning:
             add_reservation(ME.shipyard.pos, 1, is_own=True)
@@ -364,9 +373,9 @@ class PathPlanning:
         for opponent_ship in OTHER_SHIPS:
             add_reservation(opponent_ship.pos, 0, is_own=False)
             # TODO roi of losing ship?
-            if ALLIES_AROUND[opponent_ship.pos] <= OPPONENTS_AROUND[opponent_ship.pos]:
-                for next_pos in opponent_model.get_next_positions_for(opponent_ship):
-                    add_reservation(next_pos, 1, is_own=False)
+            for next_pos in opponent_model.get_next_positions_for(opponent_ship):
+                add_reservation(next_pos, 1, is_own=False,
+                                outnumbered=ALLIES_AROUND[next_pos] <= OPPONENTS_AROUND[next_pos])
 
         log('converting dropoffs')
         for i in range(N):
@@ -391,12 +400,13 @@ class PathPlanning:
             if current[i] == goals[i]:
                 plan_path(i)
 
-        # TODO plan those with conflicts first
-
-        unscheduled = [i for i in range(N) if not scheduled[i]]
-
-        for i in unscheduled:
+        unscheduled = set(i for i in range(N) if not scheduled[i])
+        while len(unscheduled) > 0:
+            i = min(unscheduled, key=lambda i: (
+                -conflicts[i], -int(goals[i] in DROPOFFS), DROPOFF_DIST_BY_POS[current[i]], -SHIPS[i].halite_amount,
+                SHIPS[i].id))
             plan_path(i)
+            unscheduled.remove(i)
         log('paths planned')
 
         return next_positions
