@@ -348,8 +348,8 @@ class PathPlanning:
                     reservations_self[time].add(pos)
 
         def plan_path(i):
-            res = reservations_all if goals[i] in DROPOFFS else reservations_outnumbered
-            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, res)
+            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite,
+                                       reservations_outnumbered)
             planned = True
             if path is None:
                 path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, reservations_self)
