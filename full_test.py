@@ -29,6 +29,8 @@ def run_game(size, opponents, bot, seed=None):
 
     i = 0
     while True:
+        # if lines[i].startswith('[warn]') and 'P0' in lines[i]:
+        #     print(lines[i])
         if lines[i].startswith('[info] Opening a file at'):
             break
         i += 1
@@ -40,6 +42,10 @@ def run_game(size, opponents, bot, seed=None):
 
 delta_by_config = {}
 
+old_2p_ranks = []
+old_4p_ranks = []
+new_2p_ranks = []
+new_4p_ranks = []
 for size in [
     32,
     40,
@@ -51,11 +57,12 @@ for size in [
         1,
         3
     ]:
-        rank_changes = []
-        for _ in range(10):
+        for i in range(5):
             print(datetime.datetime.now(), 1 + opponents, size)
 
             seed_new, results_new = run_game(size, opponents, '"python MyBot.py"', seed=None)
+            print('\t', seed_new)
+
             halite = extract_halite(results_new[0])
             opponents_halite = list(map(extract_halite, results_new[1:]))
             ds_new = [halite - oh for oh in opponents_halite]
@@ -69,5 +76,11 @@ for size in [
             rank_old = sum(int(d > 0) for d in ds_old)
             print('\told:', ds_old, rank_old)
 
-            rank_changes.append(rank_new - rank_old)
-            print('\t', mean(rank_changes))
+            if opponents == 1:
+                new_2p_ranks.append(rank_new)
+                old_2p_ranks.append(rank_old)
+                print('\t\t2p:', mean(new_2p_ranks), mean(old_2p_ranks))
+            else:
+                new_4p_ranks.append(rank_new)
+                old_4p_ranks.append(rank_old)
+                print('\t\t4p:', mean(new_4p_ranks), mean(old_4p_ranks))
