@@ -311,7 +311,15 @@ class ResourceAllocation:
             if p in goals:
                 goals_around += 1
 
-        return halite_around > 5 * constants.DROPOFF_COST, halite_around, goals_around
+        ally_dist = sum(1 / (MAP.dist(s.pos, pos) + 1) for s in SHIPS)
+        opponent_dists = []
+        for owner in GAME.others:
+            ships = GAME.players[owner].get_ships()
+            opponent_dists.append(sum(1 / (MAP.dist(s.pos, pos) + 1) for s in ships))
+
+        worthwhile = halite_around > 5 * constants.DROPOFF_COST
+        allies_closer = all(ally_dist > opponent_dist for opponent_dist in opponent_dists)
+        return worthwhile and allies_closer, halite_around, goals_around
 
 
 class PathPlanning:
