@@ -155,7 +155,6 @@ class ResourceAllocation:
     @staticmethod
     def goals_for_ships(opponent_next_positions, dropoff_radius=8):
         # TODO if we have way more ships than opponent ATTACK
-        scheduled_positions = set()
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
         mining_times = [0 for i in range(N)]
         scheduled = [False] * N
@@ -184,18 +183,17 @@ class ResourceAllocation:
             mining_times[i], halite_on_ground = IncomeEstimation.time_spent_mining(
                 DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
                 i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
-            if goals[i] not in DROPOFFS:
-                scheduled_positions.add(pos)
-                if pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
-                    reservations_by_pos[pos] += 0
-                    halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
-                    halite_by_pos[pos] += SHIPS[i].halite_amount
-                    halite_by_pos[pos] += opponent_halite_next_to(pos)
-                    # halite_on_ground = halite_by_pos[pos]
-                else:
-                    reservations_by_pos[pos] += mining_times[i]
-                    halite_by_pos[pos] = halite_on_ground
+            if goals[i] not in DROPOFFS and pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
+                reservations_by_pos[pos] += 0
+                halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
+                halite_by_pos[pos] += SHIPS[i].halite_amount
+                halite_by_pos[pos] += opponent_halite_next_to(pos)
+                # halite_on_ground = halite_by_pos[pos]
+            else:
+                reservations_by_pos[pos] += mining_times[i] + 1
+                halite_by_pos[pos] = halite_on_ground
 
+            # TODO difficulty should be added in here
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
             for j, a in enumerate(assignments):
                 if a[2] == pos:
@@ -321,7 +319,6 @@ class PathPlanning:
     def next_positions_for(opponent_model, goals, mining_times, spawning):
         current = [SHIPS[i].pos for i in range(N)]
         next_positions = [current[i] for i in range(N)]
-        distances = [0 if goals[i] is None else MAP.dist(current[i], goals[i]) for i in range(N)]
         reservations_all = defaultdict(set)
         reservations_outnumbered = defaultdict(set)
         reservations_self = defaultdict(set)
@@ -398,11 +395,17 @@ class PathPlanning:
                 add_reservation(current[i], 1, is_own=True)
                 scheduled[i] = True
 
+        unscheduled = [i for i in range(N) if not scheduled[i]]
+
         log('planning paths')
+        for i in unscheduled:
+            if current[i] == goals[i]:
+                plan_path(i)
+
         unscheduled = set(i for i in range(N) if not scheduled[i])
         while len(unscheduled) > 0:
             i = min(unscheduled, key=lambda i: (
-                -conflicts[i], -int(goals[i] in DROPOFFS), distances[i], -SHIPS[i].halite_amount,
+                -conflicts[i], -int(goals[i] in DROPOFFS), DROPOFF_DIST_BY_POS[current[i]], -SHIPS[i].halite_amount,
                 SHIPS[i].id))
             plan_path(i)
             unscheduled.remove(i)
