@@ -321,6 +321,7 @@ class PathPlanning:
     def next_positions_for(opponent_model, goals, mining_times, spawning):
         current = [SHIPS[i].pos for i in range(N)]
         next_positions = [current[i] for i in range(N)]
+        distances = [0 if goals[i] is None else MAP.dist(current[i], goals[i]) for i in range(N)]
         reservations_all = defaultdict(set)
         reservations_outnumbered = defaultdict(set)
         reservations_self = defaultdict(set)
@@ -354,8 +355,11 @@ class PathPlanning:
             if path is None:
                 path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, reservations_self)
                 if path is None:
-                    path = [(current[i], 0), (current[i], 1)]
-                    planned = False
+                    path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite,
+                                               reservations_self, window=2)
+                    if path is None:
+                        path = [(current[i], 0), (current[i], 1)]
+                        planned = False
             for raw_pos, t in path:
                 add_reservation(raw_pos, t, is_own=True)
             if planned and goals[i] not in DROPOFFS:
@@ -394,17 +398,11 @@ class PathPlanning:
                 add_reservation(current[i], 1, is_own=True)
                 scheduled[i] = True
 
-        unscheduled = [i for i in range(N) if not scheduled[i]]
-
         log('planning paths')
-        for i in unscheduled:
-            if current[i] == goals[i]:
-                plan_path(i)
-
         unscheduled = set(i for i in range(N) if not scheduled[i])
         while len(unscheduled) > 0:
             i = min(unscheduled, key=lambda i: (
-                -conflicts[i], -int(goals[i] in DROPOFFS), DROPOFF_DIST_BY_POS[current[i]], -SHIPS[i].halite_amount,
+                -conflicts[i], -int(goals[i] in DROPOFFS), distances[i], -SHIPS[i].halite_amount,
                 SHIPS[i].id))
             plan_path(i)
             unscheduled.remove(i)
