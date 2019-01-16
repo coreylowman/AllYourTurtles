@@ -193,15 +193,15 @@ class ResourceAllocation:
                 reservations_by_pos[pos] += mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
-            # TODO difficulty should be added in here
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
             for j, a in enumerate(assignments):
                 if a[2] == pos:
                     id = a[1]
                     new_hpt = IncomeEstimation.hpt_of(
                         TURNS_REMAINING - reservations_by_pos[pos],
-                        MAP.dist(SHIPS[id].pos, pos) + reservations_by_pos[pos], DROPOFF_DIST_BY_POS[pos],
-                        SHIPS[id].halite_amount, SHIPS[id].space_left, halite_on_ground, inspiration_bonus)
+                        MAP.dist(SHIPS[id].pos, pos) + reservations_by_pos[pos] + DIFFICULTY[pos],
+                        DROPOFF_DIST_BY_POS[pos], SHIPS[id].halite_amount, SHIPS[id].space_left, halite_on_ground,
+                        inspiration_bonus)
                     assignments[j] = (new_hpt, a[1], a[2])
             assignments.sort(reverse=True)
 
