@@ -387,6 +387,10 @@ class PathPlanning:
                     add_reservation(next_pos, t, is_own=False,
                                     outnumbered=ALLIES_AROUND[next_pos] <= OPPONENTS_AROUND[next_pos])
 
+        for drp in OPPONENT_DROPOFFS:
+            for t in range(0, 9):
+                add_reservation(drp, t, is_own=False)
+
         log('converting dropoffs')
         for i in range(N):
             if goals[i] is None:
