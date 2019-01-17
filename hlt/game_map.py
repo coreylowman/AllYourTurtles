@@ -149,10 +149,10 @@ class GameMap:
         self.width = width
         self.height = height
         self._cells = cells
-        self.positions = []
+        self.positions = set()
         for x in range(width):
             for y in range(height):
-                self.positions.append((x, y))
+                self.positions.add((x, y))
 
         self.distance_table = list(range(width // 2 + 1))
         self.distance_table.extend(reversed(self.distance_table[1:-1]))

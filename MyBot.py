@@ -244,7 +244,9 @@ class ResourceAllocation:
         sys = [SHIPS[i].pos[1] for i in unscheduled]
         halites = [SHIPS[i].halite_amount for i in unscheduled]
         spaces = [SHIPS[i].space_left for i in unscheduled]
-        for p in MAP.positions:
+        positions = MAP.positions - {ship.pos for ship in OTHER_SHIPS}
+        positions.update(DROPOFFS)
+        for p in positions:
             x, y = p
             halite_on_ground = MAP[p].halite_amount
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[p]
@@ -653,7 +655,7 @@ class Commander:
             for p in pos_around(ship.pos, constants.INSPIRATION_RADIUS):
                 OPPONENTS_AROUND[p] += 1
 
-        DROPOFFS = [ME.shipyard.pos] + [drp.pos for drp in ME.get_dropoffs()]
+        DROPOFFS = set([ME.shipyard.pos] + [drp.pos for drp in ME.get_dropoffs()])
 
         OPPONENT_DROPOFFS = []
         for player in OTHER_PLAYERS:
@@ -763,7 +765,7 @@ OTHER_SHIPS = []
 OPPONENT_NS = []
 TOTAL_N = 0
 
-DROPOFFS = []
+DROPOFFS = set()
 OPPONENT_DROPOFFS = []
 DROPOFF_BY_POS = {}
 DROPOFF_DIST_BY_POS = {}
