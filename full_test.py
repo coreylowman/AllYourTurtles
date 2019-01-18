@@ -50,7 +50,7 @@ for size in [
     64
 ]:
     for opponents in [
-        # 1,
+        1,
         3
     ]:
         for i in range(5):
