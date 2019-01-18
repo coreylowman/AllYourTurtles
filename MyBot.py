@@ -273,12 +273,15 @@ class ResourceAllocation:
 
     @staticmethod
     def get_potential_dropoffs(goals):
-        halite_by_pos = get_halite_by_position()
+        positions = set(nlargest(constants.WIDTH, MAP.positions, key=MAP.halite_at))
+        for i in range(N):
+            positions.update(all_neighbors(SHIPS[i].pos))
+            positions.update(all_neighbors(goals[i]))
 
         # get biggest halite positions as dropoffs
         score_by_dropoff = {}
         goals_by_dropoff = {}
-        for pos in sorted(halite_by_pos, key=halite_by_pos.get, reverse=True)[:constants.WIDTH]:
+        for pos in positions:
             can, score, num_goals = ResourceAllocation.can_convert_to_dropoff(pos, goals)
             if can:
                 score_by_dropoff[pos] = score
@@ -325,7 +328,7 @@ class ResourceAllocation:
             ships = GAME.players[owner].get_ships()
             opponent_dists.append(sum(1 / (MAP.dist(s.pos, pos) + 1) for s in ships))
 
-        worthwhile = halite_around > 5 * constants.DROPOFF_COST
+        worthwhile = halite_around > DROPOFF_COST_MULT * constants.DROPOFF_COST
         allies_closer = all(ally_dist > opponent_dist for opponent_dist in opponent_dists)
         return worthwhile and allies_closer, halite_around, goals_around
 
@@ -777,6 +780,7 @@ TOTAL_N = 0
 
 DROPOFFS = set()
 DROPOFF_RADIUS = 8 if constants.NUM_PLAYERS == 2 else 4
+DROPOFF_COST_MULT = 5 if constants.NUM_PLAYERS == 2 else 2.5
 OPPONENT_DROPOFFS = []
 DROPOFF_BY_POS = {}
 DROPOFF_DIST_BY_POS = {}
