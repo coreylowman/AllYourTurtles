@@ -157,7 +157,7 @@ class IncomeEstimation:
 
 class ResourceAllocation:
     @staticmethod
-    def goals_for_ships(opponent_next_positions, dropoff_radius=8):
+    def goals_for_ships(opponent_next_positions):
         # TODO if we have way more ships than opponent ATTACK
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
         mining_times = [0 for i in range(N)]
@@ -210,7 +210,7 @@ class ResourceAllocation:
             assignments.sort(reverse=True)
 
         log('gathering potential dropoffs')
-        score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals, dropoff_radius)
+        score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals)
         log(score_by_dropoff)
         log(goals_by_dropoff)
 
@@ -272,14 +272,14 @@ class ResourceAllocation:
         return assignments, assignments_for_ship
 
     @staticmethod
-    def get_potential_dropoffs(goals, dropoff_radius):
+    def get_potential_dropoffs(goals):
         halite_by_pos = get_halite_by_position()
 
         # get biggest halite positions as dropoffs
         score_by_dropoff = {}
         goals_by_dropoff = {}
         for pos in sorted(halite_by_pos, key=halite_by_pos.get, reverse=True)[:constants.WIDTH]:
-            can, score, num_goals = ResourceAllocation.can_convert_to_dropoff(pos, goals, dropoff_radius)
+            can, score, num_goals = ResourceAllocation.can_convert_to_dropoff(pos, goals)
             if can:
                 score_by_dropoff[pos] = score
                 goals_by_dropoff[pos] = num_goals
@@ -287,7 +287,7 @@ class ResourceAllocation:
         # only take the biggest dropoff when there are multiple nearby
         winners = set()
         for drp in score_by_dropoff:
-            conflicting_winners = {w for w in winners if MAP.dist(w, drp) < 2 * dropoff_radius}
+            conflicting_winners = {w for w in winners if MAP.dist(w, drp) < 2 * DROPOFF_RADIUS}
             if len(conflicting_winners) == 0:
                 winners.add(drp)
             elif all([score_by_dropoff[drp] > score_by_dropoff[w] for w in conflicting_winners]):
@@ -301,18 +301,18 @@ class ResourceAllocation:
         return score_by_dropoff, goals_by_dropoff
 
     @staticmethod
-    def can_convert_to_dropoff(pos, goals, dropoff_radius):
+    def can_convert_to_dropoff(pos, goals):
         if MAP[pos].has_structure:
             return False, 0, 0
 
         for drp in DROPOFFS:
-            if MAP.dist(pos, drp) <= 2 * dropoff_radius:
+            if MAP.dist(pos, drp) <= 2 * DROPOFF_RADIUS:
                 return False, 0, 0
 
         # give bonus for the halite on the dropoff
         halite_around = MAP[pos].halite_amount
         goals_around = 0
-        for p in pos_around(pos, dropoff_radius):
+        for p in pos_around(pos, DROPOFF_RADIUS):
             halite_around += MAP[p].halite_amount
             if MAP[p].is_occupied and MAP[p].ship.owner == ME.id:
                 halite_around += MAP[p].ship.halite_amount
@@ -776,6 +776,7 @@ OPPONENT_NS = []
 TOTAL_N = 0
 
 DROPOFFS = set()
+DROPOFF_RADIUS = 8 if constants.NUM_PLAYERS == 2 else 4
 OPPONENT_DROPOFFS = []
 DROPOFF_BY_POS = {}
 DROPOFF_DIST_BY_POS = {}
