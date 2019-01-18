@@ -32,6 +32,10 @@ def cardinal_neighbors(p):
     return [normalize(add(p, d)) for d in constants.CARDINAL_DIRECTIONS]
 
 
+def all_neighbors(p):
+    return set(normalize(add(p, d)) for d in constants.ALL_DIRECTIONS)
+
+
 def direction_between(a, b):
     if normalize(a) == normalize(b):
         return 0, 0
@@ -355,6 +359,14 @@ class PathPlanning:
                 if is_own:
                     reservations_self[time].add(pos)
 
+        def schedule(i, pos):
+            if i is not None:
+                next_positions[i] = pos
+                scheduled[i] = True
+            for j in range(N):
+                if pos in all_neighbors(current[j]):
+                    conflicts[j] += 1
+
         def plan_path(i):
             path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_outnumbered)
             planned = True
@@ -372,13 +384,11 @@ class PathPlanning:
                 move_time = len(path)
                 for t in range(move_time, move_time + mining_times[i]):
                     add_reservation(goals[i], t, is_own=True)
-            next_positions[i] = path[1][0]
-            scheduled[i] = True
-            if next_positions[i] in current:
-                conflicts[current.index(next_positions[i])] += 1
+            schedule(i, path[1][0])
 
         if spawning:
             add_reservation(ME.shipyard.pos, 1, is_own=True)
+            schedule(None, ME.shipyard.pos)
 
         for opponent_ship in OTHER_SHIPS:
             add_reservation(opponent_ship.pos, 0, is_own=False)
@@ -406,20 +416,21 @@ class PathPlanning:
             cost = floor(MAP[current[i]].halite_amount / constants.MOVE_COST_RATIO)
             if cost > SHIPS[i].halite_amount:
                 add_reservation(current[i], 1, is_own=True)
-                scheduled[i] = True
+                schedule(i, current[i])
 
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
-        log('planning paths')
+        log('planning stills')
         for i in unscheduled:
             if current[i] == goals[i]:
                 plan_path(i)
 
+        log('planning paths')
         unscheduled = set(i for i in range(N) if not scheduled[i])
         while len(unscheduled) > 0:
             i = min(unscheduled, key=lambda i: (
-                -conflicts[i], -int(goals[i] in DROPOFFS), DROPOFF_DIST_BY_POS[current[i]], -SHIPS[i].halite_amount,
-                SHIPS[i].id))
+                -(conflicts[i] >= 4), -int(goals[i] in DROPOFFS), DROPOFF_DIST_BY_POS[current[i]],
+                -SHIPS[i].halite_amount, SHIPS[i].id))
             plan_path(i)
             unscheduled.remove(i)
         log('paths planned')

@@ -33,6 +33,7 @@ NUM_PLAYERS = 0
 NUM_OPPONENTS = 0
 
 CARDINAL_DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+ALL_DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1), (0, 0)]
 
 
 def load_constants(constants):
