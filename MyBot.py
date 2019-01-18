@@ -449,6 +449,7 @@ class PathPlanning:
 
         heuristic_weight = 1 if goal in DROPOFFS else 2
         still_multiplier = 0 if goal in DROPOFFS else 1
+        avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
 
         def heuristic(p):
             # distance is time + cost, so heuristic is time + distance, but time is just 1 for every square, so
@@ -514,7 +515,7 @@ class PathPlanning:
 
                 # TODO make dist actual dist, add new score for cost, and use cost to break ties
                 dist = 1 - still_multiplier * move_cost if current == neighbor else 1 + move_cost
-                g = g_score[cpt] + dist
+                g = g_score[cpt] + dist + avoidance_weight * PROB_OCCUPIED[neighbor]
 
                 if npt not in open_set:
                     open_set.add(npt)
@@ -566,6 +567,19 @@ class OpponentModel:
             positions.update(self._predicted_by_ship[ship])
         return positions
 
+    def prob_occupied(self):
+        prob_by_pos = defaultdict(float)
+        for ship, positions in self._predicted_by_ship.items():
+            for pos in positions:
+                prob_by_pos[pos] += 1 / len(positions)
+
+        # TODO do something else for frozen?
+        for pos in prob_by_pos:
+            if prob_by_pos[pos] > 1:
+                prob_by_pos[pos] = 1
+
+        return prob_by_pos
+
     def update_all(self):
         predicted = self.get_next_positions()
         actual = set(s.pos for s in OTHER_SHIPS)
@@ -616,7 +630,7 @@ class OpponentModel:
         self._pos_by_ship[ship] = tuple(ship.pos)
         neighbors = cardinal_neighbors(ship.pos)
 
-        if ship.halite_amount < MAP[ship.pos].halite_amount / constants.MOVE_COST_RATIO:
+        if ship.halite_amount < floor(MAP[ship.pos].halite_amount / constants.MOVE_COST_RATIO):
             predicted_moves = {(0, 0)}
         elif len(set(moves)) == 1 and moves[0] == (0, 0):
             predicted_moves = {(0, 0)}
@@ -646,6 +660,7 @@ class Commander:
         global DROPOFFS, OPPONENT_DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
         global OPPONENTS_AROUND, ALLIES_AROUND, INSPIRED_BY_POS, EXTRACT_MULTIPLIER_BY_POS, BONUS_MULTIPLIER_BY_POS
         global HALITE_REMAINING, PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
+        global PROB_OCCUPIED
 
         log('Updating data...')
 
@@ -658,6 +673,9 @@ class Commander:
             OTHER_SHIPS.extend(other.get_ships())
             OPPONENT_NS.append(len(other.get_ships()))
         TOTAL_N = N + len(OTHER_SHIPS)
+
+        self.opponent_model.update_all()
+        prob_by_pos = self.opponent_model.prob_occupied()
 
         OPPONENTS_AROUND = defaultdict(int)
         ALLIES_AROUND = defaultdict(int)
@@ -690,6 +708,7 @@ class Commander:
             BONUS_MULTIPLIER_BY_POS[pos] = bonus
             DIFFICULTY[pos] = 0
             halite += MAP[pos].halite_amount
+            PROB_OCCUPIED[pos] = prob_by_pos[pos]
         HALITE_REMAINING = halite
         PCT_REMAINING = halite / TOTAL_HALITE
         PCT_COLLECTED = 1 - PCT_REMAINING
@@ -721,9 +740,6 @@ class Commander:
         return my_produced < opponent_produced or roi > 0
 
     def produce_commands(self):
-        self.opponent_model.update_all()
-        log('Updated opponent model')
-
         goals, mining_times, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(
             self.opponent_model.get_next_positions())
         log('allocated goals: {}'.format(goals))
@@ -799,5 +815,7 @@ PCT_REMAINING = HALITE_REMAINING / TOTAL_HALITE
 PCT_COLLECTED = 1 - PCT_REMAINING
 REMAINING_WEIGHT = constants.NUM_OPPONENTS + PCT_REMAINING
 COLLECTED_WEIGHT = constants.NUM_OPPONENTS + PCT_COLLECTED
+
+PROB_OCCUPIED = {}
 
 main()
