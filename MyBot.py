@@ -450,6 +450,8 @@ class PathPlanning:
         heuristic_weight = 1 if goal in DROPOFFS else 2
         still_multiplier = 0 if goal in DROPOFFS else 1
         avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
+        if constants.NUM_PLAYERS == 2:
+            avoidance_weight = 0
 
         def heuristic(p):
             # distance is time + cost, so heuristic is time + distance, but time is just 1 for every square, so
@@ -796,7 +798,7 @@ TOTAL_N = 0
 
 DROPOFFS = set()
 DROPOFF_RADIUS = 8 if constants.NUM_PLAYERS == 2 else 4
-DROPOFF_COST_MULT = 5 if constants.NUM_PLAYERS == 2 else 2.5
+DROPOFF_COST_MULT = 5 if constants.NUM_PLAYERS == 2 else 3
 OPPONENT_DROPOFFS = []
 DROPOFF_BY_POS = {}
 DROPOFF_DIST_BY_POS = {}
