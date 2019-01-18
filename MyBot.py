@@ -700,7 +700,7 @@ class Commander:
                        key=lambda ship: (DROPOFF_DIST_BY_POS[ship.pos], -ship.halite_amount, ship.id))
 
         if not ENDGAME:
-            ENDGAME = any(DROPOFF_DIST_BY_POS[ship.pos] >= TURNS_REMAINING for ship in SHIPS) or PCT_REMAINING <= 0.01
+            ENDGAME = any(DROPOFF_DIST_BY_POS[ship.pos] >= TURNS_REMAINING for ship in SHIPS) or PCT_REMAINING == 0
 
         log('Updated data')
 
