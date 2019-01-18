@@ -339,8 +339,6 @@ class PathPlanning:
 
         log('reserving other ship positions')
 
-        max_halite = max(map(MAP.halite_at, MAP.positions))
-
         def add_reservation(pos, time, is_own, outnumbered=True):
             # if not a dropoff, just add
             # if is a dropoff, add if enemy is reserving or if not endgame
@@ -358,14 +356,13 @@ class PathPlanning:
                     reservations_self[time].add(pos)
 
         def plan_path(i):
-            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite,
-                                       reservations_outnumbered)
+            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_outnumbered)
             planned = True
             if path is None:
-                path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite, reservations_self)
+                path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_self)
                 if path is None:
-                    path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, max_halite,
-                                               reservations_self, window=2)
+                    path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_self,
+                                               window=2)
                     if path is None:
                         path = [(current[i], 0), (current[i], 1)]
                         planned = False
@@ -430,25 +427,24 @@ class PathPlanning:
         return next_positions
 
     @staticmethod
-    def a_star(start, goal, starting_halite, max_halite, reservation_table, window=8):
+    def a_star(start, goal, starting_halite, reservation_table, window=8):
         """windowed hierarchical cooperative a*"""
 
         start = normalize(start)
         goal = normalize(goal)
 
+        heuristic_weight = 1 if goal in DROPOFFS else 2
+        still_multiplier = 0 if goal in DROPOFFS else 1
+
         def heuristic(p):
             # distance is time + cost, so heuristic is time + distance, but time is just 1 for every square, so
             # we can just double
-            return 2 * MAP.dist(p, goal)
+            return heuristic_weight * MAP.dist(p, goal)
 
         # log('{} -> {}'.format(start, goal))
 
         if start == goal and goal not in reservation_table[1]:
             return [(start, 0), (goal, 1)]
-
-        max_cost = floor(max_halite / constants.MOVE_COST_RATIO)
-        if max_cost == 0:
-            max_cost = 1
 
         closed_set = set()
         open_set = set()
@@ -480,14 +476,16 @@ class PathPlanning:
             if current == goal and not (t < window and current in reservation_table[t]) and t > 0:
                 return PathPlanning._reconstruct_path(came_from, cpt)
 
-            # log('- Expanding {} at {}. f={}'.format(current, t, f_score[cpt]))
+            # log('\t\tExpanding {}. f={} g={} h={} halite={} ground={}'.format(cpt, f_score[cpt], g_score[cpt],
+            #                                                                   h_score[cpt], halite_left,
+            #                                                                   halite_on_ground))
 
             open_set.remove(cpt)
             closed_set.add(cpt)
 
             raw_move_cost = floor(halite_on_ground / constants.MOVE_COST_RATIO)
             raw_extracted = ceil(halite_on_ground / constants.EXTRACT_RATIO)
-            move_cost = raw_move_cost / max_cost
+            move_cost = raw_move_cost / constants.MAX_HALITE
             nt = t + 1
 
             neighbors = [current]
@@ -501,8 +499,7 @@ class PathPlanning:
                     continue
 
                 # TODO make dist actual dist, add new score for cost, and use cost to break ties
-                cost = 0 if current == neighbor else move_cost
-                dist = cost + 1
+                dist = 1 - still_multiplier * move_cost if current == neighbor else 1 + move_cost
                 g = g_score[cpt] + dist
 
                 if npt not in open_set:
