@@ -98,16 +98,13 @@ class IncomeEstimation:
         # TODO discount on number of enemy forces in area vs mine
         # TODO consider blocking opponent from dropoff
         if turns_to_dropoff > turns_remaining:
-            return 0
+            return 0, 0, 1
 
         if turns_to_dropoff == 0:
             # TODO also add in value indicating hpt of creating a new ship
             # TODO discount if blocked?
             amount_gained = halite_on_board
             inspiration_gained = 0
-
-            if ROI > 0 and ME.halite_amount < constants.SHIP_COST <= ME.halite_amount + halite_on_board:
-                amount_gained += ROI
         else:
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
@@ -124,7 +121,7 @@ class IncomeEstimation:
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
-        return collect_hpt + inspiration_hpt + dropoff_bonus
+        return collect_hpt + inspiration_hpt + dropoff_bonus, amount_gained + inspiration_gained, turns_to_move + 1
 
     @staticmethod
     def time_spent_mining(turns_to_dropoff, space_left, halite_on_ground, runner_up_assignment, extract_multiplier,
@@ -132,8 +129,8 @@ class IncomeEstimation:
         t = 0
         while space_left > 0 and halite_on_ground > 0:
             halite = constants.MAX_HALITE - space_left
-            hpt = IncomeEstimation.hpt_of(TURNS_REMAINING - t, 0, turns_to_dropoff, halite,
-                                          space_left, halite_on_ground, halite_on_ground * bonus_multiplier)
+            hpt, _, _ = IncomeEstimation.hpt_of(TURNS_REMAINING - t, 0, turns_to_dropoff, halite,
+                                                space_left, halite_on_ground, halite_on_ground * bonus_multiplier)
             if hpt < runner_up_assignment[0] or hpt < halite / (turns_to_dropoff + 1):
                 return t, halite_on_ground
 
@@ -165,6 +162,7 @@ class ResourceAllocation:
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
         mining_times = [0 for i in range(N)]
         scheduled = [False] * N
+        halite = ME.halite_amount
 
         if ENDGAME:
             return goals, mining_times, [], []
@@ -174,8 +172,12 @@ class ResourceAllocation:
         log('building assignments')
         assignments = ResourceAllocation.assignments(unscheduled)
         max_non_dropoff_hpt_for_ship = [0] * N
-        for hpt, i, pos in assignments:
-            if pos not in DROPOFFS and hpt > max_non_dropoff_hpt_for_ship[i]:
+        ships = halite // constants.SHIP_COST
+        for j, (hpt, i, pos, gained, time) in enumerate(assignments):
+            if pos in DROPOFFS:
+                if ROI > 0 and ships < (halite + gained) // constants.SHIP_COST:
+                    assignments[j] = (hpt + ROI / time, i, pos, gained, time)
+            elif hpt > max_non_dropoff_hpt_for_ship[i]:
                 max_non_dropoff_hpt_for_ship[i] = hpt
 
         log('sorting assignments')
@@ -187,7 +189,7 @@ class ResourceAllocation:
         reservations_by_pos = defaultdict(int)
         halite_by_pos = {}
         while len(assignments) > 0:
-            hpt, i, pos = assignments[0]
+            hpt, i, pos, gained, time = assignments[0]
             goals[i] = pos
             scheduled[i] = True
             unscheduled.remove(i)
@@ -206,17 +208,26 @@ class ResourceAllocation:
                 reservations_by_pos[pos] += mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
+            if pos in DROPOFFS:
+                halite += gained
+
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            for j, (old_hpt, a_i, a_pos) in enumerate(assignments):
+            ships = halite // constants.SHIP_COST
+            for j, (old_hpt, a_i, a_pos, a_gained, a_time) in enumerate(assignments):
                 if a_pos == pos:
-                    new_hpt = IncomeEstimation.hpt_of(
+                    new_hpt, gained, time = IncomeEstimation.hpt_of(
                         TURNS_REMAINING - reservations_by_pos[pos],
                         MAP.dist(SHIPS[a_i].pos, pos) + reservations_by_pos[pos] + DIFFICULTY[pos],
                         DROPOFF_DIST_BY_POS[pos], SHIPS[a_i].halite_amount, SHIPS[a_i].space_left, halite_on_ground,
                         inspiration_bonus)
-                    assignments[j] = (new_hpt, a_i, a_pos)
-                    if pos not in DROPOFFS and new_hpt > max_non_dropoff_hpt_for_ship[a_i]:
+                    roi_bonus = 0
+                    if pos in DROPOFFS:
+                        if ROI > 0 and ships < (halite + gained) // constants.SHIP_COST:
+                            roi_bonus = ROI / a_time
+                    elif new_hpt > max_non_dropoff_hpt_for_ship[a_i]:
                         max_non_dropoff_hpt_for_ship[a_i] = new_hpt
+                    assignments[j] = (new_hpt + roi_bonus, a_i, a_pos, a_gained, a_time)
+
             assignments.sort(
                 key=lambda a: (a[0] - max_non_dropoff_hpt_for_ship[a[1]] if a[2] in DROPOFFS else a[0], a[1], a[2]),
                 reverse=True)
@@ -272,9 +283,9 @@ class ResourceAllocation:
             difficulty = DIFFICULTY[p]
             for i in unscheduled:
                 d = MAP.distance_table[sxs[i] - x] + MAP.distance_table[sys[i] - y] + difficulty
-                hpt = IncomeEstimation.hpt_of(TURNS_REMAINING, d, dropoff_dist, halites[i], spaces[i],
-                                              halite_on_ground, inspiration_bonus)
-                assignments_for_ship[i].append((hpt, i, p))
+                hpt, gained, time = IncomeEstimation.hpt_of(TURNS_REMAINING, d, dropoff_dist, halites[i], spaces[i],
+                                                            halite_on_ground, inspiration_bonus)
+                assignments_for_ship[i].append((hpt, i, p, gained, time))
 
         log('getting n largest assignments')
         assignments = []
