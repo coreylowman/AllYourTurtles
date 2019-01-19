@@ -3,15 +3,18 @@ import datetime
 from statistics import mean
 import random
 
+BOT = '"python MyBot.py"'
+BOT_LAST = '"python MyBot_last.py"'
+
 
 def extract_halite(line):
     return int(line.split(' ')[-2])
 
 
-def run_game(size, opponents, bot, seed):
+def run_game(size, opponents, players, seed):
     output = subprocess.check_output(
-        'halite.exe -s {} -vvv --no-logs --width {} --height {} {} {}'.format(
-            seed, size, size, bot, '"python MyBot_last.py" ' * opponents),
+        'halite.exe -s {} -vvv --no-logs --width {} --height {} {}'.format(
+            seed, size, size, players),
         stderr=subprocess.STDOUT,
         shell=True,
     )
@@ -57,26 +60,25 @@ for size in [
             seed = random.getrandbits(32)
             print(datetime.datetime.now(), 1 + opponents, size, seed)
 
-            results_new = run_game(size, opponents, '"python MyBot.py"', seed)
+            for i in range(opponents + 1):
+                players = [BOT_LAST] * opponents
+                players.insert(i, BOT)
 
-            halite = extract_halite(results_new[0])
-            opponents_halite = list(map(extract_halite, results_new[1:]))
-            ds_new = [halite - oh for oh in opponents_halite]
-            rank_new = sum(int(d > 0) for d in ds_new)
-            print('\tnew:', ds_new, rank_new)
+                results_new = run_game(size, opponents, ' '.join(players), seed)
 
-            results_old = run_game(size, opponents, '"python MyBot_last.py"', seed)
-            halite = extract_halite(results_old[0])
-            opponents_halite = list(map(extract_halite, results_old[1:]))
-            ds_old = [halite - oh for oh in opponents_halite]
-            rank_old = sum(int(d > 0) for d in ds_old)
-            print('\told:', ds_old, rank_old)
+                halite = extract_halite(results_new[i])
+                opponents_halite = list(map(extract_halite, results_new[:i] + results_new[i + 1:]))
+                ds_new = [halite - oh for oh in opponents_halite]
+                rank_new = sum(int(d > 0) for d in ds_new)
+                print('\t', players, 'new:', ds_new, rank_new)
 
+                if opponents == 1:
+                    new_2p_ranks.append(rank_new)
+                else:
+                    new_4p_ranks.append(rank_new)
             if opponents == 1:
-                new_2p_ranks.append(rank_new)
-                old_2p_ranks.append(rank_old)
+                old_2p_ranks.extend(list(range(opponents + 1)))
                 print('\t\t2p:', mean(new_2p_ranks), mean(old_2p_ranks))
             else:
-                new_4p_ranks.append(rank_new)
-                old_4p_ranks.append(rank_old)
+                old_4p_ranks.extend(list(range(opponents + 1)))
                 print('\t\t4p:', mean(new_4p_ranks), mean(old_4p_ranks))
