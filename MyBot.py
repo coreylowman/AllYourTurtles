@@ -100,12 +100,11 @@ class IncomeEstimation:
         if turns_to_dropoff > turns_remaining:
             return 0, 0, 1
 
-        time = turns_to_move + 1
-
         if turns_to_dropoff == 0:
-            # TODO also add in value indicating hpt of creating a new ship
-            # TODO discount if blocked?
-            return halite_on_board / time + 1, halite_on_board, time
+            if turns_to_move == 0:
+                return halite_on_board, halite_on_board, 1
+            else:
+                return halite_on_board / turns_to_move + 1, halite_on_board, turns_to_move
 
         # TODO take into account movement cost?
         # TODO consider the HPT of attacking an enemy ship
@@ -116,8 +115,18 @@ class IncomeEstimation:
         inspiration_gained = inspiration_bonus
         if inspiration_gained > space_left:
             inspiration_gained = space_left
+        space_left -= inspiration_gained
 
         gained = amount_gained + inspiration_gained
+
+        if turns_to_move == 0:
+            extract_time = 1
+        else:
+            extract_time = 3
+            if inspiration_bonus > 0:
+                extract_time /= 3
+
+        time = turns_to_move + extract_time
 
         collect_hpt = gained / time
         # TODO dropoff bonus scale with amoutn gained
