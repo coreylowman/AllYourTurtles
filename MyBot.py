@@ -105,6 +105,9 @@ class IncomeEstimation:
             # TODO discount if blocked?
             amount_gained = halite_on_board
             inspiration_gained = 0
+
+            if ROI > 0 and ME.halite_amount < constants.SHIP_COST <= ME.halite_amount + halite_on_board:
+                amount_gained += ROI
         else:
             # TODO take into account movement cost?
             # TODO consider the HPT of attacking an enemy ship
@@ -673,7 +676,7 @@ class Commander:
         global DROPOFFS, OPPONENT_DROPOFFS, DROPOFF_BY_POS, DROPOFF_DIST_BY_POS
         global OPPONENTS_AROUND, ALLIES_AROUND, INSPIRED_BY_POS, EXTRACT_MULTIPLIER_BY_POS, BONUS_MULTIPLIER_BY_POS
         global HALITE_REMAINING, PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
-        global PROB_OCCUPIED
+        global PROB_OCCUPIED, ROI
 
         log('Updating data...')
 
@@ -737,6 +740,8 @@ class Commander:
         if not ENDGAME:
             ENDGAME = any(DROPOFF_DIST_BY_POS[ship.pos] >= TURNS_REMAINING for ship in SHIPS) or PCT_REMAINING == 0
 
+        ROI = IncomeEstimation.roi()
+
         log('Updated data')
 
     def should_make_ship(self, goals):
@@ -749,8 +754,7 @@ class Commander:
 
         my_produced = len(ME.ships_produced)
         opponent_produced = ceil(mean([len(other.ships_produced) for other in OTHER_PLAYERS]))
-        roi = IncomeEstimation.roi()
-        return my_produced < opponent_produced or roi > 0
+        return my_produced < opponent_produced or ROI > 0
 
     def produce_commands(self):
         goals, mining_times, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(
@@ -828,6 +832,8 @@ PCT_REMAINING = HALITE_REMAINING / TOTAL_HALITE
 PCT_COLLECTED = 1 - PCT_REMAINING
 REMAINING_WEIGHT = constants.NUM_OPPONENTS + PCT_REMAINING
 COLLECTED_WEIGHT = constants.NUM_OPPONENTS + PCT_COLLECTED
+
+ROI = 0
 
 PROB_OCCUPIED = {}
 
