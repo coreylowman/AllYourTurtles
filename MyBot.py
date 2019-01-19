@@ -435,9 +435,16 @@ class PathPlanning:
 
         log('planning paths')
         unscheduled = set(i for i in range(N) if not scheduled[i])
+        distances = [0 if goals[i] is None else MAP.dist(current[i], goals[i]) for i in range(N)]
+        number_closer = [0] * N
+        for i in range(N):
+            if goals[i] is not None:
+                for j in range(N):
+                    if MAP.dist(current[j], goals[i]) < distances[i]:
+                        number_closer[i] += 1
         while len(unscheduled) > 0:
             i = min(unscheduled, key=lambda i: (
-                -(conflicts[i] >= 4), -int(goals[i] in DROPOFFS), DROPOFF_DIST_BY_POS[current[i]],
+                -(conflicts[i] >= 4), -int(goals[i] in DROPOFFS), distances[i], number_closer[i],
                 -SHIPS[i].halite_amount, SHIPS[i].id))
             plan_path(i)
             unscheduled.remove(i)
