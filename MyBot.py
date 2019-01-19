@@ -169,10 +169,16 @@ class ResourceAllocation:
         unscheduled = list(range(N))
 
         log('building assignments')
-        assignments, assignments_for_ship = ResourceAllocation.assignments(unscheduled)
+        assignments = ResourceAllocation.assignments(unscheduled)
+        max_non_dropoff_hpt_for_ship = [0] * N
+        for hpt, i, pos in assignments:
+            if pos not in DROPOFFS and hpt > max_non_dropoff_hpt_for_ship[i]:
+                max_non_dropoff_hpt_for_ship[i] = hpt
 
         log('sorting assignments')
-        assignments.sort(reverse=True)
+        assignments.sort(
+            key=lambda a: (a[0] - max_non_dropoff_hpt_for_ship[a[1]] if a[2] in DROPOFFS else a[0], a[1], a[2]),
+            reverse=True)
 
         log('gathering assignments')
         reservations_by_pos = defaultdict(int)
@@ -198,16 +204,19 @@ class ResourceAllocation:
                 halite_by_pos[pos] = halite_on_ground
 
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            for j, a in enumerate(assignments):
-                if a[2] == pos:
-                    id = a[1]
+            for j, (old_hpt, a_i, a_pos) in enumerate(assignments):
+                if a_pos == pos:
                     new_hpt = IncomeEstimation.hpt_of(
                         TURNS_REMAINING - reservations_by_pos[pos],
-                        MAP.dist(SHIPS[id].pos, pos) + reservations_by_pos[pos] + DIFFICULTY[pos],
-                        DROPOFF_DIST_BY_POS[pos], SHIPS[id].halite_amount, SHIPS[id].space_left, halite_on_ground,
+                        MAP.dist(SHIPS[a_i].pos, pos) + reservations_by_pos[pos] + DIFFICULTY[pos],
+                        DROPOFF_DIST_BY_POS[pos], SHIPS[a_i].halite_amount, SHIPS[a_i].space_left, halite_on_ground,
                         inspiration_bonus)
-                    assignments[j] = (new_hpt, a[1], a[2])
-            assignments.sort(reverse=True)
+                    assignments[j] = (new_hpt, a_i, a_pos)
+                    if pos not in DROPOFFS and new_hpt > max_non_dropoff_hpt_for_ship[a_i]:
+                        max_non_dropoff_hpt_for_ship[a_i] = new_hpt
+            assignments.sort(
+                key=lambda a: (a[0] - max_non_dropoff_hpt_for_ship[a[1]] if a[2] in DROPOFFS else a[0], a[1], a[2]),
+                reverse=True)
 
         log('gathering potential dropoffs')
         score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals)
@@ -269,7 +278,7 @@ class ResourceAllocation:
         for i in unscheduled:
             assignments_for_ship[i] = nlargest(N + 1, assignments_for_ship[i])
             assignments.extend(assignments_for_ship[i])
-        return assignments, assignments_for_ship
+        return assignments
 
     @staticmethod
     def get_potential_dropoffs(goals):
