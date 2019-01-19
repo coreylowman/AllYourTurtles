@@ -100,28 +100,30 @@ class IncomeEstimation:
         if turns_to_dropoff > turns_remaining:
             return 0, 0, 1
 
+        time = turns_to_move + 1
+
         if turns_to_dropoff == 0:
             # TODO also add in value indicating hpt of creating a new ship
             # TODO discount if blocked?
-            amount_gained = halite_on_board
-            inspiration_gained = 0
-        else:
-            # TODO take into account movement cost?
-            # TODO consider the HPT of attacking an enemy ship
-            amount_gained = halite_on_ground
-            if amount_gained > space_left:
-                amount_gained = space_left
-            space_left -= amount_gained
-            inspiration_gained = inspiration_bonus
-            if inspiration_gained > space_left:
-                inspiration_gained = space_left
+            return halite_on_board / time + 1, halite_on_board, time
 
-        collect_hpt = amount_gained / (turns_to_move + 1)
-        inspiration_hpt = inspiration_gained / (turns_to_move + 1)
+        # TODO take into account movement cost?
+        # TODO consider the HPT of attacking an enemy ship
+        amount_gained = halite_on_ground
+        if amount_gained > space_left:
+            amount_gained = space_left
+        space_left -= amount_gained
+        inspiration_gained = inspiration_bonus
+        if inspiration_gained > space_left:
+            inspiration_gained = space_left
+
+        gained = amount_gained + inspiration_gained
+
+        collect_hpt = gained / time
         # TODO dropoff bonus scale with amoutn gained
         dropoff_bonus = 1 / (turns_to_dropoff + 1)
 
-        return collect_hpt + inspiration_hpt + dropoff_bonus, amount_gained + inspiration_gained, turns_to_move + 1
+        return collect_hpt + dropoff_bonus, gained, time
 
     @staticmethod
     def time_spent_mining(turns_to_dropoff, space_left, halite_on_ground, runner_up_assignment, extract_multiplier,
@@ -266,7 +268,6 @@ class ResourceAllocation:
     @staticmethod
     def assignments(unscheduled):
         # TODO don't assign to a position nearby with an enemy ship on it
-        assignments_for_ship = [[] for i in unscheduled]
         sxs = [SHIPS[i].pos[0] for i in unscheduled]
         sys = [SHIPS[i].pos[1] for i in unscheduled]
         halites = [SHIPS[i].halite_amount for i in unscheduled]
@@ -275,23 +276,25 @@ class ResourceAllocation:
         if constants.NUM_PLAYERS == 4:
             positions = positions - {ship.pos for ship in OTHER_SHIPS}
             positions.update(DROPOFFS)
-        for p in positions:
+        P = len(positions)
+        assignments_for_ship = [[None] * P for i in unscheduled]
+        dist_table = MAP.distance_table
+        for j, p in enumerate(positions):
             x, y = p
             halite_on_ground = MAP[p].halite_amount
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[p]
             dropoff_dist = DROPOFF_DIST_BY_POS[p]
             difficulty = DIFFICULTY[p]
             for i in unscheduled:
-                d = MAP.distance_table[sxs[i] - x] + MAP.distance_table[sys[i] - y] + difficulty
+                d = dist_table[sxs[i] - x] + dist_table[sys[i] - y] + difficulty
                 hpt, gained, time = IncomeEstimation.hpt_of(TURNS_REMAINING, d, dropoff_dist, halites[i], spaces[i],
                                                             halite_on_ground, inspiration_bonus)
-                assignments_for_ship[i].append((hpt, i, p, gained, time))
+                assignments_for_ship[i][j] = (hpt, i, p, gained, time)
 
         log('getting n largest assignments')
         assignments = []
         for i in unscheduled:
-            assignments_for_ship[i] = nlargest(N + 1, assignments_for_ship[i])
-            assignments.extend(assignments_for_ship[i])
+            assignments.extend(nlargest(N + 1, assignments_for_ship[i]))
         return assignments
 
     @staticmethod
