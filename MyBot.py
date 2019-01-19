@@ -164,7 +164,6 @@ class ResourceAllocation:
         goals = [DROPOFF_BY_POS[SHIPS[i].pos] for i in range(N)]
         mining_times = [0 for i in range(N)]
         scheduled = [False] * N
-        halite = ME.halite_amount
 
         if ENDGAME:
             return goals, mining_times, [], []
@@ -173,19 +172,9 @@ class ResourceAllocation:
 
         log('building assignments')
         assignments = ResourceAllocation.assignments(unscheduled)
-        max_non_dropoff_hpt_for_ship = [0] * N
-        ships = halite // constants.SHIP_COST
-        for j, (hpt, i, pos, gained, time) in enumerate(assignments):
-            if pos in DROPOFFS:
-                if ROI > 0 and ships < (halite + gained) // constants.SHIP_COST:
-                    assignments[j] = (hpt + ROI / time, i, pos, gained, time)
-            elif hpt > max_non_dropoff_hpt_for_ship[i]:
-                max_non_dropoff_hpt_for_ship[i] = hpt
 
         log('sorting assignments')
-        assignments.sort(
-            key=lambda a: (a[0] - max_non_dropoff_hpt_for_ship[a[1]] if a[2] in DROPOFFS else a[0], a[1], a[2]),
-            reverse=True)
+        assignments.sort(reverse=True)
 
         log('gathering assignments')
         reservations_by_pos = defaultdict(int)
@@ -210,11 +199,7 @@ class ResourceAllocation:
                 reservations_by_pos[pos] += mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
-            if pos in DROPOFFS:
-                halite += gained
-
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            ships = halite // constants.SHIP_COST
             for j, (old_hpt, a_i, a_pos, a_gained, a_time) in enumerate(assignments):
                 if a_pos == pos:
                     new_hpt, gained, time = IncomeEstimation.hpt_of(
@@ -222,17 +207,9 @@ class ResourceAllocation:
                         MAP.dist(SHIPS[a_i].pos, pos) + reservations_by_pos[pos] + DIFFICULTY[pos],
                         DROPOFF_DIST_BY_POS[pos], SHIPS[a_i].halite_amount, SHIPS[a_i].space_left, halite_on_ground,
                         inspiration_bonus)
-                    roi_bonus = 0
-                    if pos in DROPOFFS:
-                        if ROI > 0 and ships < (halite + gained) // constants.SHIP_COST:
-                            roi_bonus = ROI / a_time
-                    elif new_hpt > max_non_dropoff_hpt_for_ship[a_i]:
-                        max_non_dropoff_hpt_for_ship[a_i] = new_hpt
-                    assignments[j] = (new_hpt + roi_bonus, a_i, a_pos, a_gained, a_time)
+                    assignments[j] = (new_hpt, a_i, a_pos, a_gained, a_time)
 
-            assignments.sort(
-                key=lambda a: (a[0] - max_non_dropoff_hpt_for_ship[a[1]] if a[2] in DROPOFFS else a[0], a[1], a[2]),
-                reverse=True)
+            assignments.sort(reverse=True)
 
         log('gathering potential dropoffs')
         score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals)
