@@ -274,9 +274,11 @@ class ResourceAllocation:
     @staticmethod
     def get_potential_dropoffs(goals):
         positions = set(nlargest(constants.WIDTH, MAP.positions, key=MAP.halite_at))
-        for i in range(N):
-            positions.update(all_neighbors(SHIPS[i].pos))
-            positions.update(all_neighbors(goals[i]))
+
+        if constants.NUM_PLAYERS == 4:
+            for i in range(N):
+                positions.update(all_neighbors(SHIPS[i].pos))
+                positions.update(all_neighbors(goals[i]))
 
         # get biggest halite positions as dropoffs
         score_by_dropoff = {}
