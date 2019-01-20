@@ -716,7 +716,7 @@ class Commander:
             EXTRACT_MULTIPLIER_BY_POS[pos] = extract
             BONUS_MULTIPLIER_BY_POS[pos] = bonus
             DIFFICULTY[pos] = 0
-            halite += MAP[pos].halite_amount
+            halite += MAP[pos].halite_amount * (1 + bonus)
             PROB_OCCUPIED[pos] = prob_by_pos[pos]
         HALITE_REMAINING = halite
         PCT_REMAINING = halite / TOTAL_HALITE
@@ -746,7 +746,9 @@ class Commander:
                 return False
 
         my_produced = len(ME.ships_produced)
-        opponent_produced = ceil(mean([len(other.ships_produced) for other in OTHER_PLAYERS]))
+        opponent_produced = 0
+        if TOTAL_N - my_produced > 0:
+            opponent_produced = ceil(mean(filter(None, [len(other.ships_produced) for other in OTHER_PLAYERS])))
         return my_produced < opponent_produced or ROI > 0
 
     def produce_commands(self):
