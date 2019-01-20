@@ -525,6 +525,7 @@ class PathPlanning:
             raw_extracted = ceil(halite_on_ground / constants.EXTRACT_RATIO)
             move_cost = raw_move_cost / constants.MAX_HALITE
             nt = t + 1
+            avoid_mult = 1 if nt < window else 0
 
             neighbors = [current]
             if raw_move_cost <= halite_left:
@@ -538,7 +539,7 @@ class PathPlanning:
 
                 # TODO make dist actual dist, add new score for cost, and use cost to break ties
                 dist = 1 - still_multiplier * move_cost if current == neighbor else 1 + move_cost
-                g = g_score[cpt] + dist + avoidance_weight * PROB_OCCUPIED[neighbor]
+                g = g_score[cpt] + dist + avoid_mult * avoidance_weight * PROB_OCCUPIED[neighbor]
 
                 if npt not in open_set:
                     open_set.add(npt)
