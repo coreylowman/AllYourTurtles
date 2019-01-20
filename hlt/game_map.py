@@ -164,10 +164,10 @@ class GameMap:
         :param location: the position or entity to access in this map
         :return: the contents housing that cell or entity
         """
-        return self._cells[location[1]][location[0]]
+        return self._cells[location]
 
     def halite_at(self, position):
-        return self._cells[position[1]][position[0]].halite_amount
+        return self._cells[position].halite_amount
 
     def calculate_distance(self, source, target):
         """
@@ -259,12 +259,12 @@ class GameMap:
         :return: The map object
         """
         map_width, map_height = map(int, input().split())
-        game_map = [[None for _ in range(map_width)] for _ in range(map_height)]
+        game_map = {}
         for y_position in range(map_height):
             cells = input().split()
             for x_position in range(map_width):
-                game_map[y_position][x_position] = MapCell(Position(x_position, y_position, normalize=False),
-                                                           int(cells[x_position]))
+                game_map[(x_position, y_position)] = MapCell(Position(x_position, y_position, normalize=False),
+                                                             int(cells[x_position]))
         return GameMap(game_map, map_width, map_height)
 
     def _update(self):
@@ -276,8 +276,8 @@ class GameMap:
         # later)
         for y in range(self.height):
             for x in range(self.width):
-                self[(x, y)].ship = None
+                self._cells[(x, y)].ship = None
 
         for _ in range(int(input())):
             cell_x, cell_y, cell_energy = map(int, input().split())
-            self[(cell_x, cell_y)].halite_amount = cell_energy
+            self._cells[(cell_x, cell_y)].halite_amount = cell_energy

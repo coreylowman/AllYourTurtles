@@ -12,6 +12,9 @@ import math
 from math import ceil, floor
 from statistics import mean
 from heapq import nlargest
+import gc
+
+gc.disable()
 
 
 def log(s):
@@ -25,7 +28,9 @@ def normalize(p):
 
 
 def add(a, b):
-    return a[0] + b[0], a[1] + b[1]
+    ax, ay = a
+    bx, by = b
+    return ax + bx, ay + by
 
 
 def cardinal_neighbors(p):
@@ -37,34 +42,21 @@ def all_neighbors(p):
 
 
 def direction_between(a, b):
-    if normalize(a) == normalize(b):
-        return 0, 0
-
-    for d in constants.CARDINAL_DIRECTIONS:
+    for d in constants.ALL_DIRECTIONS:
         if normalize(add(a, d)) == normalize(b):
             return d
 
 
 def pos_around(p, radius):
+    px, py = p
     positions = set()
     for y in range(radius + 1):
         for x in range(radius + 1 - y):
-            positions.add(normalize((p[0] + x, p[1] + y)))
-            positions.add(normalize((p[0] - x, p[1] + y)))
-            positions.add(normalize((p[0] - x, p[1] - y)))
-            positions.add(normalize((p[0] + x, p[1] - y)))
+            positions.add(normalize((px + x, py + y)))
+            positions.add(normalize((px - x, py + y)))
+            positions.add(normalize((px - x, py - y)))
+            positions.add(normalize((px + x, py - y)))
     return positions
-
-
-def ships_around(p, owner, max_radius):
-    ships, other_ships = 0, 0
-    for p in pos_around(p, max_radius):
-        if MAP[p].is_occupied:
-            if MAP[p].ship.owner == owner:
-                ships += 1
-            else:
-                other_ships += 1
-    return ships, other_ships
 
 
 def opponent_halite_next_to(p):
@@ -75,21 +67,6 @@ def opponent_halite_next_to(p):
     return halite
 
 
-def centroid(positions):
-    total = [0, 0]
-    for p in positions:
-        np = normalize(p)
-        total[0] += np[0]
-        total[1] += np[1]
-    total[0] /= len(positions)
-    total[1] /= len(positions)
-    return round(total[0]), round(total[1])
-
-
-def get_halite_by_position():
-    return {p: MAP[p].halite_amount for p in MAP.positions}
-
-
 class IncomeEstimation:
     @staticmethod
     def hpt_of(turns_remaining, turns_to_move, turns_to_dropoff, halite_on_board, space_left, halite_on_ground,
@@ -97,7 +74,7 @@ class IncomeEstimation:
         # TODO consider attacking opponent
         # TODO discount on number of enemy forces in area vs mine
         # TODO consider blocking opponent from dropoff
-        if turns_to_dropoff > turns_remaining:
+        if turns_to_move + turns_to_dropoff > turns_remaining:
             return 0, 0, 1
 
         if turns_to_dropoff == 0:
@@ -177,7 +154,7 @@ class ResourceAllocation:
         if ENDGAME:
             return goals, mining_times, [], []
 
-        unscheduled = list(range(N))
+        unscheduled = set(range(N))
 
         log('building assignments')
         assignments = ResourceAllocation.assignments(unscheduled)
@@ -189,12 +166,10 @@ class ResourceAllocation:
         reservations_by_pos = defaultdict(int)
         halite_by_pos = {}
         while len(assignments) > 0:
-            hpt, i, pos, gained, time = assignments[0]
+            hpt, i, pos, gained, distance, time = assignments[0]
             goals[i] = pos
             scheduled[i] = True
-            unscheduled.remove(i)
             i_assignments = [a for a in assignments if a[1] == i]
-            assignments = [a for a in assignments if a[1] != i]
             mining_times[i], halite_on_ground = IncomeEstimation.time_spent_mining(
                 DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
                 i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
@@ -208,17 +183,20 @@ class ResourceAllocation:
                 reservations_by_pos[pos] += mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
+            new_assignments = []
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            for j, (old_hpt, a_i, a_pos, a_gained, a_time) in enumerate(assignments):
-                if a_pos == pos:
+            reservations = reservations_by_pos[pos]
+            dropoff_dist = DROPOFF_DIST_BY_POS[pos]
+            for a in filter(lambda a: a[1] != i, assignments):
+                if a[2] == pos:
+                    old_hpt, a_i, a_pos, a_gained, a_dist, a_time = a
                     new_hpt, gained, time = IncomeEstimation.hpt_of(
-                        TURNS_REMAINING - reservations_by_pos[pos],
-                        MAP.dist(SHIPS[a_i].pos, pos) + reservations_by_pos[pos] + DIFFICULTY[pos],
-                        DROPOFF_DIST_BY_POS[pos], SHIPS[a_i].halite_amount, SHIPS[a_i].space_left, halite_on_ground,
-                        inspiration_bonus)
-                    assignments[j] = (new_hpt, a_i, a_pos, a_gained, a_time)
-
-            assignments.sort(reverse=True)
+                        TURNS_REMAINING, a_dist + reservations, dropoff_dist, SHIPS[a_i].halite_amount,
+                        SHIPS[a_i].space_left, halite_on_ground, inspiration_bonus)
+                    new_assignments.append((new_hpt, a_i, a_pos, gained, a_dist, time))
+                else:
+                    new_assignments.append(a)
+            assignments = sorted(new_assignments, reverse=True)
 
         log('gathering potential dropoffs')
         score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals)
@@ -275,12 +253,15 @@ class ResourceAllocation:
                 d = dist_table[sxs[i] - x] + dist_table[sys[i] - y] + difficulty
                 hpt, gained, time = IncomeEstimation.hpt_of(TURNS_REMAINING, d, dropoff_dist, halites[i], spaces[i],
                                                             halite_on_ground, inspiration_bonus)
-                assignments_for_ship[i][j] = (hpt, i, p, gained, time)
+                assignments_for_ship[i][j] = (hpt, i, p, gained, d, time)
 
-        log('getting n largest assignments')
         assignments = []
-        for i in unscheduled:
-            assignments.extend(nlargest(N + 1, assignments_for_ship[i]))
+        if N > 0:
+            max_per_ship = MAX_ASSIGNMENTS // N + 1
+            n = min(N + 1, max_per_ship)
+            log('getting n={} largest assignments'.format(n))
+            for i in unscheduled:
+                assignments.extend(nlargest(n, assignments_for_ship[i]))
         return assignments
 
     @staticmethod
@@ -357,6 +338,7 @@ class PathPlanning:
         reservations_self = defaultdict(set)
         scheduled = [False] * N
         conflicts = [0] * N
+        distances = [0 if goals[i] is None else MAP.dist(current[i], goals[i]) for i in range(N)]
 
         log('reserving other ship positions')
 
@@ -439,12 +421,11 @@ class PathPlanning:
 
         log('planning stills')
         for i in unscheduled:
-            if current[i] == goals[i]:
+            if distances[i] == 0:
                 plan_path(i)
 
         log('planning paths')
         unscheduled = set(i for i in range(N) if not scheduled[i])
-        distances = [0 if goals[i] is None else MAP.dist(current[i], goals[i]) for i in range(N)]
         number_closer = [0] * N
         for i in range(N):
             if goals[i] is not None:
@@ -473,6 +454,10 @@ class PathPlanning:
         avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
         if constants.NUM_PLAYERS == 2:
             avoidance_weight = 0
+
+        if N > 100:
+            window = min(window, 4)
+            heuristic_weight = 2
 
         def heuristic(p):
             # distance is time + cost, so heuristic is time + distance, but time is just 1 for every square, so
@@ -652,17 +637,16 @@ class OpponentModel:
         self._moves_by_ship[ship] = moves
 
         self._pos_by_ship[ship] = tuple(ship.pos)
-        neighbors = cardinal_neighbors(ship.pos)
 
         if ship.halite_amount < floor(MAP[ship.pos].halite_amount / constants.MOVE_COST_RATIO):
             predicted_moves = {(0, 0)}
         elif len(set(moves)) == 1 and moves[0] == (0, 0):
             predicted_moves = {(0, 0)}
         else:
-            predicted_moves = list(constants.CARDINAL_DIRECTIONS) + [(0, 0)]
+            predicted_moves = list(constants.ALL_DIRECTIONS)
 
         self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
-        self._potentials_by_ship[ship] = set(neighbors + [ship.pos])
+        self._potentials_by_ship[ship] = all_neighbors(ship.pos)
 
 
 class Commander:
@@ -697,6 +681,7 @@ class Commander:
             OTHER_SHIPS.extend(other.get_ships())
             OPPONENT_NS.append(len(other.get_ships()))
         TOTAL_N = N + len(OTHER_SHIPS)
+        log('N={} ON={}'.format(N, OPPONENT_NS))
 
         self.opponent_model.update_all()
         prob_by_pos = self.opponent_model.prob_occupied()
@@ -834,6 +819,7 @@ BONUS_MULTIPLIER_BY_POS = {}
 DIFFICULTY = {}
 
 SIZE = constants.WIDTH * constants.HEIGHT
+HALF_SIZE = SIZE // 2
 TOTAL_HALITE = sum(MAP[p].halite_amount for p in MAP.positions)
 HALITE_REMAINING = TOTAL_HALITE
 PCT_REMAINING = HALITE_REMAINING / TOTAL_HALITE
@@ -842,6 +828,8 @@ REMAINING_WEIGHT = constants.NUM_OPPONENTS + PCT_REMAINING
 COLLECTED_WEIGHT = constants.NUM_OPPONENTS + PCT_COLLECTED
 
 ROI = 0
+
+MAX_ASSIGNMENTS = 10000
 
 PROB_OCCUPIED = {}
 
