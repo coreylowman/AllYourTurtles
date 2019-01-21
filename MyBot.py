@@ -451,9 +451,10 @@ class PathPlanning:
 
         heuristic_weight = 1 if goal in DROPOFFS else 2
         still_multiplier = 0 if goal in DROPOFFS else 1
-        avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
         if constants.NUM_PLAYERS == 2:
-            avoidance_weight = 0
+            avoidance_weight = starting_halite / constants.MAX_HALITE
+        else:
+            avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
 
         if N > 100:
             window = min(window, 4)
@@ -589,14 +590,13 @@ class OpponentModel:
     def prob_occupied(self):
         prob_by_pos = defaultdict(float)
         for ship, positions in self._predicted_by_ship.items():
-            score_by_pos = {}
-            for pos in positions:
-                score = 1
-                if self.moving_towards(ship, pos):
-                    score += 1
-                if direction_between(ship.pos, pos) == self._moves_by_ship[ship][-1]:
-                    score += 1
-                score_by_pos[pos] = score
+            score_by_pos = {p: 1 for p in positions}
+            if N <= 100:
+                for pos in positions:
+                    if self.moving_towards(ship, pos):
+                        score_by_pos[pos] += 1
+                    if direction_between(ship.pos, pos) == self._moves_by_ship[ship][-1]:
+                        score_by_pos[pos] += 1
             total_score = sum(score_by_pos.values())
             for pos in positions:
                 prob_by_pos[pos] += score_by_pos[pos] / total_score
