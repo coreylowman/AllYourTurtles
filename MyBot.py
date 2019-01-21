@@ -237,9 +237,8 @@ class ResourceAllocation:
         halites = [SHIPS[i].halite_amount for i in unscheduled]
         spaces = [SHIPS[i].space_left for i in unscheduled]
         positions = MAP.positions
-        if constants.NUM_PLAYERS == 4:
-            positions = positions - {ship.pos for ship in OTHER_SHIPS}
-            positions.update(DROPOFFS)
+        positions = positions - {ship.pos for ship in OTHER_SHIPS}
+        positions.update(DROPOFFS)
         P = len(positions)
         assignments_for_ship = [[None] * P for i in unscheduled]
         dist_table = MAP.distance_table
