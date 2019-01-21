@@ -237,8 +237,9 @@ class ResourceAllocation:
         halites = [SHIPS[i].halite_amount for i in unscheduled]
         spaces = [SHIPS[i].space_left for i in unscheduled]
         positions = MAP.positions
-        positions = positions - {ship.pos for ship in OTHER_SHIPS}
-        positions.update(DROPOFFS)
+        if constants.NUM_PLAYERS == 4:
+            positions = positions - {ship.pos for ship in OTHER_SHIPS}
+            positions.update(DROPOFFS)
         P = len(positions)
         assignments_for_ship = [[None] * P for i in unscheduled]
         dist_table = MAP.distance_table
@@ -450,10 +451,7 @@ class PathPlanning:
 
         heuristic_weight = 1 if goal in DROPOFFS else 2
         still_multiplier = 0 if goal in DROPOFFS else 1
-        if constants.NUM_PLAYERS == 2:
-            avoidance_weight = starting_halite / constants.MAX_HALITE
-        else:
-            avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
+        avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
 
         if N > 100:
             window = min(window, 4)
