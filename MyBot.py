@@ -716,9 +716,9 @@ class Commander:
             EXTRACT_MULTIPLIER_BY_POS[pos] = extract
             BONUS_MULTIPLIER_BY_POS[pos] = bonus
             DIFFICULTY[pos] = 0
-            halite += MAP[pos].halite_amount * (1 + bonus)
+            halite += MAP[pos].halite_amount
             PROB_OCCUPIED[pos] = prob_by_pos[pos]
-        HALITE_REMAINING = halite
+        HALITE_REMAINING = 2 * halite
         PCT_REMAINING = halite / TOTAL_HALITE
         PCT_COLLECTED = 1 - PCT_REMAINING
         REMAINING_WEIGHT = constants.NUM_OPPONENTS + PCT_REMAINING
