@@ -268,10 +268,9 @@ class ResourceAllocation:
     def get_potential_dropoffs(goals):
         positions = set(nlargest(constants.WIDTH, MAP.positions, key=MAP.halite_at))
 
-        if constants.NUM_PLAYERS == 4:
-            for i in range(N):
-                positions.update(all_neighbors(SHIPS[i].pos))
-                positions.update(all_neighbors(goals[i]))
+        for i in range(N):
+            positions.update(all_neighbors(SHIPS[i].pos))
+            positions.update(all_neighbors(goals[i]))
 
         # get biggest halite positions as dropoffs
         score_by_dropoff = {}
@@ -716,9 +715,9 @@ class Commander:
             EXTRACT_MULTIPLIER_BY_POS[pos] = extract
             BONUS_MULTIPLIER_BY_POS[pos] = bonus
             DIFFICULTY[pos] = 0
-            halite += MAP[pos].halite_amount
+            halite += MAP[pos].halite_amount * (1 + bonus)
             PROB_OCCUPIED[pos] = prob_by_pos[pos]
-        HALITE_REMAINING = 2 * halite
+        HALITE_REMAINING = halite
         PCT_REMAINING = halite / TOTAL_HALITE
         PCT_COLLECTED = 1 - PCT_REMAINING
         REMAINING_WEIGHT = constants.NUM_OPPONENTS + PCT_REMAINING
