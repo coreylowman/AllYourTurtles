@@ -268,9 +268,10 @@ class ResourceAllocation:
     def get_potential_dropoffs(goals):
         positions = set(nlargest(constants.WIDTH, MAP.positions, key=MAP.halite_at))
 
-        for i in range(N):
-            positions.update(all_neighbors(SHIPS[i].pos))
-            positions.update(all_neighbors(goals[i]))
+        if constants.NUM_PLAYERS == 4:
+            for i in range(N):
+                positions.update(all_neighbors(SHIPS[i].pos))
+                positions.update(all_neighbors(goals[i]))
 
         # get biggest halite positions as dropoffs
         score_by_dropoff = {}
@@ -557,6 +558,7 @@ class OpponentModel:
     def __init__(self, n=10):
         self._n = n
         self._pos_by_ship = {}
+        self._history_by_ship = {}
         self._moves_by_ship = {}
         self._predicted_by_ship = {}
         self._potentials_by_ship = {}
@@ -575,16 +577,37 @@ class OpponentModel:
             positions.update(self._predicted_by_ship[ship])
         return positions
 
+    def moving_towards(self, ship, pos):
+        last_dist = math.inf
+        for old_pos in self._history_by_ship[ship][-2:]:
+            d = MAP.dist(old_pos, pos)
+            if d > last_dist:
+                return False
+            last_dist = d
+        return True
+
     def prob_occupied(self):
         prob_by_pos = defaultdict(float)
         for ship, positions in self._predicted_by_ship.items():
+            score_by_pos = {}
             for pos in positions:
-                prob_by_pos[pos] += 1 / len(positions)
+                score = 1
+                if self.moving_towards(ship, pos):
+                    score += 1
+                if direction_between(ship.pos, pos) == self._moves_by_ship[ship][-1]:
+                    score += 1
+                score_by_pos[pos] = score
+            total_score = sum(score_by_pos.values())
+            for pos in positions:
+                prob_by_pos[pos] += score_by_pos[pos] / total_score
 
         # TODO do something else for frozen?
         for pos in prob_by_pos:
             if prob_by_pos[pos] > 1:
                 prob_by_pos[pos] = 1
+
+        for drp in DROPOFFS:
+            prob_by_pos[drp] = 0
 
         return prob_by_pos
 
@@ -625,21 +648,25 @@ class OpponentModel:
             del self._moves_by_ship[ship]
             del self._predicted_by_ship[ship]
             del self._potentials_by_ship[ship]
+            del self._history_by_ship[ship]
 
     def update(self, ship):
         if ship not in self._pos_by_ship:
             moves = [(0, 0)]
+            history = [ship.pos]
         else:
             moves = self._moves_by_ship[ship]
             moves.append(direction_between(ship.pos, self._pos_by_ship[ship]))
             moves = moves[-self._n:]
-        self._moves_by_ship[ship] = moves
+            history = self._history_by_ship[ship]
+            history.append(ship.pos)
+            history = history[-self._n:]
 
+        self._moves_by_ship[ship] = moves
+        self._history_by_ship[ship] = history
         self._pos_by_ship[ship] = tuple(ship.pos)
 
         if ship.halite_amount < floor(MAP[ship.pos].halite_amount / constants.MOVE_COST_RATIO):
-            predicted_moves = {(0, 0)}
-        elif len(set(moves)) == 1 and moves[0] == (0, 0):
             predicted_moves = {(0, 0)}
         else:
             predicted_moves = list(constants.ALL_DIRECTIONS)
