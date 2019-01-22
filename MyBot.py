@@ -81,7 +81,7 @@ class IncomeEstimation:
             if turns_to_move == 0:
                 return halite_on_board, halite_on_board, 1
             else:
-                return halite_on_board / (2 * turns_to_move) + 1, halite_on_board, turns_to_move
+                return halite_on_board / turns_to_move + 1, halite_on_board, turns_to_move
 
         # TODO take into account movement cost?
         # TODO consider the HPT of attacking an enemy ship
@@ -169,10 +169,11 @@ class ResourceAllocation:
             hpt, i, pos, gained, distance, time = assignments[0]
             goals[i] = pos
             scheduled[i] = True
-            i_assignments = [a for a in assignments if a[1] == i]
+            it = filter(lambda a: a[1] == i, assignments)
+            _, next_best = next(it), next(it)
             mining_times[i], halite_on_ground = IncomeEstimation.time_spent_mining(
                 DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
-                i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
+                next_best, EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
             if pos not in DROPOFFS and pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
                 halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
                 halite_by_pos[pos] += SHIPS[i].halite_amount
@@ -589,14 +590,14 @@ class OpponentModel:
     def prob_occupied(self):
         prob_by_pos = defaultdict(float)
         for ship, positions in self._predicted_by_ship.items():
+            p = self._pos_by_ship[ship]
             score_by_pos = {p: 1 for p in positions}
             if N <= 100:
                 for pos in positions:
                     if self.moving_towards(ship, pos):
                         score_by_pos[pos] += 1
-                if len(positions) > 1:
-                    for i, move in enumerate(reversed(self._moves_by_ship[ship])):
-                        score_by_pos[normalize(add(self._pos_by_ship[ship], move))] += 1 / (i + 1)
+                    if direction_between(p, pos) == self._moves_by_ship[ship][-1]:
+                        score_by_pos[pos] += 1
             total_score = sum(score_by_pos.values())
             for pos in positions:
                 prob_by_pos[pos] += score_by_pos[pos] / total_score
@@ -857,7 +858,7 @@ COLLECTED_WEIGHT = constants.NUM_OPPONENTS + PCT_COLLECTED
 
 ROI = 0
 
-MAX_ASSIGNMENTS = 95 * 95
+MAX_ASSIGNMENTS = 100 * 100
 
 PROB_OCCUPIED = {}
 
