@@ -162,13 +162,13 @@ class ResourceAllocation:
 
         unscheduled = set(range(N))
 
-        log('building assignments')
+        # log('building assignments')
         assignments = ResourceAllocation.assignments(unscheduled)
 
-        log('sorting assignments')
+        # log('sorting assignments')
         assignments.sort(reverse=True)
 
-        log('gathering assignments')
+        # log('gathering assignments')
         reservations_by_pos = defaultdict(int)
         halite_by_pos = {}
         while len(assignments) > 0:
@@ -204,10 +204,10 @@ class ResourceAllocation:
                     new_assignments.append(a)
             assignments = sorted(new_assignments, reverse=True)
 
-        log('gathering potential dropoffs')
+        # log('gathering potential dropoffs')
         score_by_dropoff, goals_by_dropoff = ResourceAllocation.get_potential_dropoffs(goals)
-        log(score_by_dropoff)
-        log(goals_by_dropoff)
+        # log(score_by_dropoff)
+        # log(goals_by_dropoff)
 
         planned_dropoffs = []
         scheduled_dropoffs = []
@@ -217,13 +217,13 @@ class ResourceAllocation:
             planned_dropoffs = [drp for drp in goals_by_dropoff if goals_by_dropoff[drp] > 1]
             planned_dropoffs = sorted(planned_dropoffs, key=score_by_dropoff.get)
             for new_dropoff in planned_dropoffs:
-                log('dropoff position: {}'.format(new_dropoff))
+                # log('dropoff position: {}'.format(new_dropoff))
 
                 i = min(ships_for_dropoffs, key=lambda i: MAP.dist(SHIPS[i].pos, new_dropoff))
                 costs.append(constants.DROPOFF_COST - SHIPS[i].halite_amount - MAP[new_dropoff].halite_amount)
 
                 if ME.halite_amount >= costs[-1]:
-                    log('chosen ship: {}'.format(SHIPS[i]))
+                    # log('chosen ship: {}'.format(SHIPS[i]))
                     goals[i] = None if SHIPS[i].pos == new_dropoff else new_dropoff
                     ships_for_dropoffs.remove(i)
                     scheduled_dropoffs.append(new_dropoff)
@@ -265,7 +265,7 @@ class ResourceAllocation:
         if N > 0:
             max_per_ship = MAX_ASSIGNMENTS // N + 1
             n = min(N + 1, max_per_ship)
-            log('getting n={} largest assignments'.format(n))
+            # log('getting n={} largest assignments'.format(n))
             for i in unscheduled:
                 assignments.extend(nlargest(n, assignments_for_ship[i]))
         return assignments
@@ -339,26 +339,23 @@ class PathPlanning:
     def next_positions_for(opponent_model, goals, mining_times, spawning):
         current = [SHIPS[i].pos for i in range(N)]
         next_positions = [current[i] for i in range(N)]
-        reservations_all = defaultdict(set)
         reservations_outnumbered = defaultdict(set)
         reservations_self = defaultdict(set)
         scheduled = [False] * N
         conflicts = [0] * N
         distances = [0 if goals[i] is None else MAP.dist(current[i], goals[i]) for i in range(N)]
 
-        log('reserving other ship positions')
+        # log('reserving other ship positions')
 
         def add_reservation(pos, time, is_own, outnumbered=True):
             # if not a dropoff, just add
             # if is a dropoff, add if enemy is reserving or if not endgame
             if pos in DROPOFFS:
                 if not ENDGAME and is_own:
-                    reservations_all[time].add(pos)
                     reservations_self[time].add(pos)
                     if outnumbered:
                         reservations_outnumbered[time].add(pos)
             else:
-                reservations_all[time].add(pos)
                 if outnumbered:
                     reservations_outnumbered[time].add(pos)
                 if is_own:
@@ -378,7 +375,8 @@ class PathPlanning:
             for n in cardinal_neighbors(current[i]):
                 os = MAP[n].ship
                 if os is not None and os.owner != ME.id and n not in DROPOFFS:
-                    if n not in reservations_outnumbered[1] and IncomeEstimation.collision_return(my_halite, os.halite_amount) <= 0:
+                    if n not in reservations_outnumbered[1] and IncomeEstimation.collision_return(my_halite,
+                                                                                                  os.halite_amount) <= 0:
                         added.add(n)
                         for t in range(1, 9):
                             reservations_outnumbered[t].add(n)
@@ -419,7 +417,7 @@ class PathPlanning:
             for t in range(0, 9):
                 add_reservation(drp, t, is_own=False)
 
-        log('converting dropoffs')
+        # log('converting dropoffs')
         for i in range(N):
             if goals[i] is None:
                 scheduled[i] = True
@@ -428,7 +426,7 @@ class PathPlanning:
 
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
-        log('locking stills')
+        # log('locking stills')
         for i in unscheduled:
             cost = floor(MAP[current[i]].halite_amount / constants.MOVE_COST_RATIO)
             if cost > SHIPS[i].halite_amount:
@@ -437,12 +435,12 @@ class PathPlanning:
 
         unscheduled = [i for i in range(N) if not scheduled[i]]
 
-        log('planning stills')
+        # log('planning stills')
         for i in unscheduled:
             if distances[i] == 0:
                 plan_path(i)
 
-        log('planning paths')
+        # log('planning paths')
         unscheduled = set(i for i in range(N) if not scheduled[i])
         number_closer = [0] * N
         for i in range(N):
@@ -456,7 +454,7 @@ class PathPlanning:
                 -SHIPS[i].halite_amount, SHIPS[i].id))
             plan_path(i)
             unscheduled.remove(i)
-        log('paths planned')
+        # log('paths planned')
 
         return next_positions
 
@@ -580,12 +578,12 @@ class OpponentModel:
         self._history_by_ship = {}
         self._moves_by_ship = {}
         self._predicted_by_ship = {}
-        self._potentials_by_ship = {}
+        # self._potentials_by_ship = {}
 
-        self.tp = 0
-        self.fp = 0
-        self.tn = 0
-        self.fn = 0
+        # self.tp = 0
+        # self.fp = 0
+        # self.tn = 0
+        # self.fn = 0
 
     def get_next_positions_for(self, ship):
         return self._predicted_by_ship[ship]
@@ -631,32 +629,32 @@ class OpponentModel:
         return prob_by_pos
 
     def update_all(self):
-        predicted = self.get_next_positions()
-        actual = set(s.pos for s in OTHER_SHIPS)
-        potentials = set()
-        for ship, potentials in self._potentials_by_ship.items():
-            potentials.update(potentials)
+        # predicted = self.get_next_positions()
+        # actual = set(s.pos for s in OTHER_SHIPS)
+        # potentials = set()
+        # for ship, potentials in self._potentials_by_ship.items():
+        #     potentials.update(potentials)
 
-        for pos in potentials:
-            was_predicted = pos in predicted
-            was_taken = pos in actual
-            if was_predicted and was_taken:
-                self.tp += 1
-            elif was_predicted and not was_taken:
-                self.fp += 1
-            elif not was_predicted and was_taken:
-                self.fn += 1
-            else:
-                self.tn += 1
+        # for pos in potentials:
+        #     was_predicted = pos in predicted
+        #     was_taken = pos in actual
+        #     if was_predicted and was_taken:
+        #         self.tp += 1
+        #     elif was_predicted and not was_taken:
+        #         self.fp += 1
+        #     elif not was_predicted and was_taken:
+        #         self.fn += 1
+        #     else:
+        #         self.tn += 1
 
-        total = self.tp + self.tn + self.fp + self.fn
-        if total > 0:
-            mcc = self.tp * self.tn - self.fp * self.fn
-            denom = (self.tp + self.fp) * (self.tp + self.fn) * (self.tn + self.fp) * (self.tn + self.fn)
-            mcc /= math.sqrt(1 if denom == 0.0 else denom)
-            log('Opponent Model: tp={:.2f} tn={:.2f} fp={:.2f} fn={:.2f}'.format(
-                100 * self.tp / total, 100 * self.tn / total, 100 * self.fp / total, 100 * self.fn / total))
-            log('Opponent Model: mcc={}'.format(mcc))
+        # total = self.tp + self.tn + self.fp + self.fn
+        # if total > 0:
+        #     mcc = self.tp * self.tn - self.fp * self.fn
+        #     denom = (self.tp + self.fp) * (self.tp + self.fn) * (self.tn + self.fp) * (self.tn + self.fn)
+        #     mcc /= math.sqrt(1 if denom == 0.0 else denom)
+        # log('Opponent Model: tp={:.2f} tn={:.2f} fp={:.2f} fn={:.2f}'.format(
+        #     100 * self.tp / total, 100 * self.tn / total, 100 * self.fp / total, 100 * self.fn / total))
+        # log('Opponent Model: mcc={}'.format(mcc))
 
         for opponent_ship in OTHER_SHIPS:
             self.update(opponent_ship)
@@ -666,7 +664,7 @@ class OpponentModel:
             del self._pos_by_ship[ship]
             del self._moves_by_ship[ship]
             del self._predicted_by_ship[ship]
-            del self._potentials_by_ship[ship]
+            # del self._potentials_by_ship[ship]
             del self._history_by_ship[ship]
 
     def update(self, ship):
@@ -691,7 +689,7 @@ class OpponentModel:
             predicted_moves = list(constants.ALL_DIRECTIONS)
 
         self._predicted_by_ship[ship] = set(normalize(add(ship.pos, move)) for move in predicted_moves)
-        self._potentials_by_ship[ship] = all_neighbors(ship.pos)
+        # self._potentials_by_ship[ship] = all_neighbors(ship.pos)
 
 
 class Commander:
@@ -702,11 +700,11 @@ class Commander:
     def run_once(self):
         GAME.update_frame()
         self.update_globals()
-        start_time = datetime.now()
-        log('Starting turn {}'.format(GAME.turn_number))
+        # start_time = datetime.now()
+        # log('Starting turn {}'.format(GAME.turn_number))
         queue = self.produce_commands()
         GAME.end_turn(queue)
-        log('Turn took {}'.format((datetime.now() - start_time).total_seconds()))
+        # log('Turn took {}'.format((datetime.now() - start_time).total_seconds()))
 
     def update_globals(self):
         global GAME, MAP, ME, OTHER_PLAYERS, TURNS_REMAINING, ENDGAME, SHIPS, N, OTHER_SHIPS, OPPONENT_NS, TOTAL_N
@@ -715,7 +713,7 @@ class Commander:
         global HALITE_REMAINING, PCT_REMAINING, PCT_COLLECTED, DIFFICULTY, REMAINING_WEIGHT, COLLECTED_WEIGHT
         global PROB_OCCUPIED, ROI
 
-        log('Updating data...')
+        # log('Updating data...')
 
         TURNS_REMAINING = constants.MAX_TURNS - GAME.turn_number
         SHIPS = ME.get_ships()
@@ -726,7 +724,7 @@ class Commander:
             OTHER_SHIPS.extend(other.get_ships())
             OPPONENT_NS.append(len(other.get_ships()))
         TOTAL_N = N + len(OTHER_SHIPS)
-        log('N={} ON={}'.format(N, OPPONENT_NS))
+        # log('N={} ON={}'.format(N, OPPONENT_NS))
 
         self.opponent_model.update_all()
         prob_by_pos = self.opponent_model.prob_occupied()
@@ -780,7 +778,7 @@ class Commander:
 
         ROI = IncomeEstimation.roi()
 
-        log('Updated data')
+        # log('Updated data')
 
     def should_make_ship(self, goals):
         if ENDGAME:
@@ -799,7 +797,7 @@ class Commander:
     def produce_commands(self):
         goals, mining_times, planned_dropoffs, costs = ResourceAllocation.goals_for_ships(
             self.opponent_model.get_next_positions())
-        log('allocated goals: {}'.format(goals))
+        # log('allocated goals: {}'.format(goals))
 
         halite_available = ME.halite_amount
         spawning = False
@@ -807,10 +805,10 @@ class Commander:
                 costs) >= constants.SHIP_COST and self.should_make_ship(goals):
             halite_available -= constants.SHIP_COST
             spawning = True
-            log('spawning')
+            # log('spawning')
 
         next_positions = PathPlanning.next_positions_for(self.opponent_model, goals, mining_times, spawning)
-        log('planned paths: {}'.format(next_positions))
+        # log('planned paths: {}'.format(next_positions))
 
         commands = []
         if spawning:
@@ -823,7 +821,7 @@ class Commander:
                 if halite_available >= cost:
                     commands.append(SHIPS[i].make_dropoff())
                     halite_available -= cost
-                    log('Making dropoff with {}'.format(SHIPS[i]))
+                    # log('Making dropoff with {}'.format(SHIPS[i]))
                     planned_dropoffs.remove(SHIPS[i].pos)
                 else:
                     commands.append(SHIPS[i].stay_still())
