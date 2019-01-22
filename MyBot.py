@@ -163,7 +163,7 @@ class ResourceAllocation:
         assignments.sort(reverse=True)
 
         log('gathering assignments')
-        next_free_time_by_pos = defaultdict(int)
+        reservations_by_pos = defaultdict(int)
         halite_by_pos = {}
         while len(assignments) > 0:
             hpt, i, pos, gained, distance, time = assignments[0]
@@ -179,24 +179,18 @@ class ResourceAllocation:
                 halite_by_pos[pos] += opponent_halite_next_to(pos)
                 # halite_on_ground = halite_by_pos[pos]
             else:
-                start_time = distance
-                if next_free_time_by_pos[pos] > start_time:
-                    start_time = next_free_time_by_pos[pos]
-                next_free_time_by_pos[pos] = start_time + mining_times[i] + 1
+                reservations_by_pos[pos] += mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
             new_assignments = []
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            free_time = next_free_time_by_pos[pos]
+            reservations = reservations_by_pos[pos]
             dropoff_dist = DROPOFF_DIST_BY_POS[pos]
             for a in filter(lambda a: a[1] != i, assignments):
                 if a[2] == pos:
                     old_hpt, a_i, a_pos, a_gained, a_dist, a_time = a
-                    start_time = a_dist
-                    if free_time > start_time:
-                        start_time = free_time
                     new_hpt, gained, time = IncomeEstimation.hpt_of(
-                        TURNS_REMAINING, start_time, dropoff_dist, SHIPS[a_i].halite_amount,
+                        TURNS_REMAINING, a_dist + reservations, dropoff_dist, SHIPS[a_i].halite_amount,
                         SHIPS[a_i].space_left, halite_on_ground, inspiration_bonus)
                     new_assignments.append((new_hpt, a_i, a_pos, gained, a_dist, time))
                 else:
