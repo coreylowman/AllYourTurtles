@@ -173,13 +173,15 @@ class ResourceAllocation:
             mining_times[i], halite_on_ground = IncomeEstimation.time_spent_mining(
                 DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
                 i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
-            if goals[i] not in DROPOFFS and pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
+            if pos not in DROPOFFS and pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
                 halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
                 halite_by_pos[pos] += SHIPS[i].halite_amount
                 halite_by_pos[pos] += opponent_halite_next_to(pos)
                 # halite_on_ground = halite_by_pos[pos]
             else:
-                start_time = max(distance, next_free_time_by_pos[pos])
+                start_time = distance
+                if next_free_time_by_pos[pos] > start_time:
+                    start_time = next_free_time_by_pos[pos]
                 next_free_time_by_pos[pos] = start_time + mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
@@ -190,7 +192,9 @@ class ResourceAllocation:
             for a in filter(lambda a: a[1] != i, assignments):
                 if a[2] == pos:
                     old_hpt, a_i, a_pos, a_gained, a_dist, a_time = a
-                    start_time = max(a_dist, free_time)
+                    start_time = a_dist
+                    if free_time > start_time:
+                        start_time = free_time
                     new_hpt, gained, time = IncomeEstimation.hpt_of(
                         TURNS_REMAINING, start_time, dropoff_dist, SHIPS[a_i].halite_amount,
                         SHIPS[a_i].space_left, halite_on_ground, inspiration_bonus)
@@ -858,7 +862,7 @@ COLLECTED_WEIGHT = constants.NUM_OPPONENTS + PCT_COLLECTED
 
 ROI = 0
 
-MAX_ASSIGNMENTS = 10000
+MAX_ASSIGNMENTS = 95 * 95
 
 PROB_OCCUPIED = {}
 
