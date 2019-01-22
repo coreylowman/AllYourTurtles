@@ -142,6 +142,12 @@ class IncomeEstimation:
         halite_gained = expected_halite_1 - expected_halite
         return halite_gained - constants.SHIP_COST
 
+    @staticmethod
+    def collision_return(my_halite, their_halite):
+        expected_halite = N * HALITE_REMAINING / TOTAL_N if TOTAL_N > 0 else 0
+        expected_halite_1 = (N - 1) * HALITE_REMAINING / (TOTAL_N - 2)
+        return expected_halite_1 - expected_halite + (their_halite - my_halite)
+
 
 class ResourceAllocation:
     @staticmethod
@@ -367,13 +373,23 @@ class PathPlanning:
                     conflicts[j] += 1
 
         def plan_path(i):
-            path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_outnumbered)
+            my_halite = SHIPS[i].halite_amount
+            added = set()
+            for p in cardinal_neighbors(current[i]):
+                os = MAP[p].ship
+                if os is not None and os.owner != ME.id and os.pos not in DROPOFFS:
+                    op = os.pos
+                    if op not in reservations_outnumbered[1] and IncomeEstimation.collision_return(my_halite,
+                                                                                                   os.halite_amount) <= 0:
+                        added.add(op)
+                        for t in range(1, 9):
+                            reservations_outnumbered[t].add(op)
+            path = PathPlanning.a_star(current[i], goals[i], my_halite, reservations_outnumbered)
             planned = True
             if path is None:
-                path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_self)
+                path = PathPlanning.a_star(current[i], goals[i], my_halite, reservations_self)
                 if path is None:
-                    path = PathPlanning.a_star(current[i], goals[i], SHIPS[i].halite_amount, reservations_self,
-                                               window=2)
+                    path = PathPlanning.a_star(current[i], goals[i], my_halite, reservations_self, window=2)
                     if path is None:
                         path = [(current[i], 0), (current[i], 1)]
                         planned = False
@@ -384,6 +400,10 @@ class PathPlanning:
                 for t in range(move_time, move_time + mining_times[i]):
                     add_reservation(goals[i], t, is_own=True)
             schedule(i, path[1][0])
+
+            for p in added:
+                for t in range(1, 9):
+                    reservations_outnumbered[t].remove(p)
 
         if spawning:
             add_reservation(ME.shipyard.pos, 1, is_own=True)
