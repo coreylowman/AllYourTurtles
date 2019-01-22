@@ -81,7 +81,7 @@ class IncomeEstimation:
             if turns_to_move == 0:
                 return halite_on_board, halite_on_board, 1
             else:
-                return halite_on_board / turns_to_move + 1, halite_on_board, turns_to_move
+                return halite_on_board / (2 * turns_to_move) + 1, halite_on_board, turns_to_move
 
         # TODO take into account movement cost?
         # TODO consider the HPT of attacking an enemy ship
