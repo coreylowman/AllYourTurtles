@@ -378,15 +378,10 @@ class PathPlanning:
             for n in cardinal_neighbors(current[i]):
                 os = MAP[n].ship
                 if os is not None and os.owner != ME.id and n not in DROPOFFS:
-                    if IncomeEstimation.collision_return(my_halite, os.halite_amount) <= 0:
-                        if opponent_model.attacking(os, current[i]) and current[i] not in reservations_outnumbered[1]:
-                            added.add(current[i])
-                            for t in range(1, 9):
-                                reservations_outnumbered[t].add(current[i])
-                        if n not in reservations_outnumbered[1]:
-                            added.add(n)
-                            for t in range(1, 9):
-                                reservations_outnumbered[t].add(n)
+                    if n not in reservations_outnumbered[1] and IncomeEstimation.collision_return(my_halite, os.halite_amount) <= 0:
+                        added.add(n)
+                        for t in range(1, 9):
+                            reservations_outnumbered[t].add(n)
             path = PathPlanning.a_star(current[i], goals[i], my_halite, reservations_outnumbered)
             planned = True
             if path is None:
@@ -606,15 +601,6 @@ class OpponentModel:
         for old_pos in self._history_by_ship[ship][-2:]:
             d = MAP.dist(old_pos, pos)
             if d > last_dist:
-                return False
-            last_dist = d
-        return True
-
-    def attacking(self, ship, pos):
-        last_dist = math.inf
-        for old_pos in self._history_by_ship[ship][-2:]:
-            d = MAP.dist(old_pos, pos)
-            if d >= last_dist:
                 return False
             last_dist = d
         return True
