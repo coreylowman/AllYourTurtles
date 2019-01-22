@@ -163,7 +163,7 @@ class ResourceAllocation:
         assignments.sort(reverse=True)
 
         log('gathering assignments')
-        reservations_by_pos = defaultdict(int)
+        next_free_time_by_pos = defaultdict(int)
         halite_by_pos = {}
         while len(assignments) > 0:
             hpt, i, pos, gained, distance, time = assignments[0]
@@ -174,24 +174,25 @@ class ResourceAllocation:
                 DROPOFF_DIST_BY_POS[pos], SHIPS[i].space_left, halite_by_pos.get(pos, MAP[pos].halite_amount),
                 i_assignments[1], EXTRACT_MULTIPLIER_BY_POS[pos], BONUS_MULTIPLIER_BY_POS[pos])
             if goals[i] not in DROPOFFS and pos in opponent_next_positions and MAP.dist(SHIPS[i].pos, pos) <= 1:
-                reservations_by_pos[pos] += 0
                 halite_by_pos[pos] = halite_by_pos.get(pos, MAP[pos].halite_amount)
                 halite_by_pos[pos] += SHIPS[i].halite_amount
                 halite_by_pos[pos] += opponent_halite_next_to(pos)
                 # halite_on_ground = halite_by_pos[pos]
             else:
-                reservations_by_pos[pos] += mining_times[i] + 1
+                start_time = max(distance, next_free_time_by_pos[pos])
+                next_free_time_by_pos[pos] = start_time + mining_times[i] + 1
                 halite_by_pos[pos] = halite_on_ground
 
             new_assignments = []
             inspiration_bonus = halite_on_ground * BONUS_MULTIPLIER_BY_POS[pos]
-            reservations = reservations_by_pos[pos]
+            free_time = next_free_time_by_pos[pos]
             dropoff_dist = DROPOFF_DIST_BY_POS[pos]
             for a in filter(lambda a: a[1] != i, assignments):
                 if a[2] == pos:
                     old_hpt, a_i, a_pos, a_gained, a_dist, a_time = a
+                    start_time = max(a_dist, free_time)
                     new_hpt, gained, time = IncomeEstimation.hpt_of(
-                        TURNS_REMAINING, a_dist + reservations, dropoff_dist, SHIPS[a_i].halite_amount,
+                        TURNS_REMAINING, start_time, dropoff_dist, SHIPS[a_i].halite_amount,
                         SHIPS[a_i].space_left, halite_on_ground, inspiration_bonus)
                     new_assignments.append((new_hpt, a_i, a_pos, gained, a_dist, time))
                 else:
@@ -451,7 +452,10 @@ class PathPlanning:
 
         heuristic_weight = 1 if goal in DROPOFFS else 2
         still_multiplier = 0 if goal in DROPOFFS else 1
-        avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
+        if constants.NUM_PLAYERS == 2:
+            avoidance_weight = starting_halite / constants.MAX_HALITE
+        else:
+            avoidance_weight = 1 + constants.NUM_OPPONENTS * starting_halite / constants.MAX_HALITE
 
         if N > 100:
             window = min(window, 4)
