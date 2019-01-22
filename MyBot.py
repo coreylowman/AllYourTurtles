@@ -594,8 +594,9 @@ class OpponentModel:
                 for pos in positions:
                     if self.moving_towards(ship, pos):
                         score_by_pos[pos] += 1
-                    if direction_between(ship.pos, pos) == self._moves_by_ship[ship][-1]:
-                        score_by_pos[pos] += 1
+                if len(positions) > 1:
+                    for i, move in enumerate(reversed(self._moves_by_ship[ship])):
+                        score_by_pos[normalize(add(self._pos_by_ship[ship], move))] += 1 / (i + 1)
             total_score = sum(score_by_pos.values())
             for pos in positions:
                 prob_by_pos[pos] += score_by_pos[pos] / total_score
