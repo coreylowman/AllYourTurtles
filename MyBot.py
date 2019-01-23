@@ -100,7 +100,7 @@ class IncomeEstimation:
             extract_time = 1
         else:
             extract_time = 3
-            if inspiration_bonus > 0:
+            if inspiration_bonus > 0 or space_left == 0:
                 extract_time /= 3
 
         time = turns_to_move + extract_time
