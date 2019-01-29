@@ -18,18 +18,18 @@ The comments in the code have more details.
 
 Everything is in MyBot.py :X It's commented though, and (at least I think) fairly clean.
 
-Entrypoint: main()
+Entrypoint: [main()](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L61)
 
 Classes:
 
-* Commander is the high level bot and uses all the rest of the classes
-* IncomeEstimation does value calculation of assignments and ROI calculation
-* ResourceAllocation assigns ships to goals
-* PathPlanning plans paths
-* OpponentModel naively computes a probability of an opponent being at a square
+* [Commander](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L67) is the high level bot and uses all the rest of the classes
+* [IncomeEstimation](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L224) does value calculation of assignments and ROI calculation
+* [ResourceAllocation](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L356) assigns ships to goals
+* [PathPlanning](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L614) plans paths
+* [OpponentModel](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L929) naively computes a probability of an opponent being at a square
 
 Notable functions:
 
-* value function
-* dropoff function
-* A*
+* [value function](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L226)
+* [dropoff function](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L574)
+* [A*](https://github.com/coreylowman/AllYourTurtles/blob/master/MyBot.py#L807)
